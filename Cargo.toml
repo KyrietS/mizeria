@@ -1,0 +1,8 @@
+[package]
+name = "mizeria"
+version = "0.1.0"
+authors = ["KyrietS"]
+edition = "2018"
+
+[dev-dependencies]
+temp_testdir = "0.2"
