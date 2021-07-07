@@ -4,8 +4,16 @@ version = "0.1.0"
 authors = ["KyrietS"]
 edition = "2018"
 
+[[bin]]
+name = "mizeria"
+test = false
+
+[lib]
+doctest = false
+
 [dependencies]
 chrono = "0.4"
+regex = "1.5"
 
 [dev-dependencies]
 temp_testdir = "0.2"
