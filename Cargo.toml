@@ -4,5 +4,8 @@ version = "0.1.0"
 authors = ["KyrietS"]
 edition = "2018"
 
+[dependencies]
+chrono = "0.4"
+
 [dev-dependencies]
 temp_testdir = "0.2"
