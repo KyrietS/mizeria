@@ -1,5 +1,9 @@
 use chrono::{Datelike, Timelike};
+use path_absolutize::Absolutize;
+use std::fs::File;
+use std::io::Write;
 use std::{ffi::OsStr, fs::create_dir, path::PathBuf};
+use walkdir::WalkDir;
 
 struct Args {
     backup: PathBuf,
@@ -21,7 +25,7 @@ where
     println!("Folder that will be backed up:");
     println!("  {}", args.files.to_string_lossy());
 
-    let snapshot = add_snapshot(&args.backup)?;
+    let snapshot = add_snapshot(&args.backup, &args.files)?;
     println!("Snapshot created at: {}", snapshot.to_string_lossy());
     Ok(())
 }
@@ -37,7 +41,7 @@ fn parse_args(args: &Vec<String>) -> Result<Args, &'static str> {
     })
 }
 
-fn add_snapshot(backup_path: &PathBuf) -> Result<PathBuf, String> {
+fn add_snapshot(backup_path: &PathBuf, files: &PathBuf) -> Result<PathBuf, String> {
     if !backup_path.is_dir() {
         Err("Folder with backup does not exist or is not accessible")?;
     }
@@ -51,10 +55,34 @@ fn add_snapshot(backup_path: &PathBuf) -> Result<PathBuf, String> {
 
     create_dir(&snapshot_path).or(Err("Cannot create directory for a snapshot"))?;
 
+    make_index(&snapshot_path, &files, &snapshot_name)?;
+
+    let snapshot_files = snapshot_path.join("files");
+    create_dir(snapshot_files).or(Err("Cannot create directory for snapshot files"))?;
+
     Ok(snapshot_path)
 }
 
-fn get_date_time() -> String {
+fn make_index(snapshot: &PathBuf, files: &PathBuf, snapshot_name: &String) -> Result<(), String> {
+    let snapshot_index = snapshot.join("index.txt");
+    println!("Saving index to: {}", snapshot_index.display());
+    let mut snapshot_index = File::create(snapshot_index).or(Err("Cannot create index file"))?;
+
+    for entry in WalkDir::new(&files) {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                continue;
+            }
+        };
+        let file_path = entry.path().absolutize().unwrap();
+        writeln!(snapshot_index, "{} {}", snapshot_name, file_path.display()).unwrap();
+    }
+    Ok(())
+}
+
+pub fn get_date_time() -> String {
     let datetime = chrono::offset::Local::now();
     let date = datetime.date().naive_local();
     let time = datetime.time();
@@ -70,15 +98,82 @@ fn get_date_time() -> String {
 }
 
 #[cfg(test)]
+mod index_tests {
+    use std::fs;
+
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn index_empty_folder() {
+        let snapshot_name = get_date_time();
+        let snapshot = tempdir().unwrap();
+        let files = tempdir().unwrap();
+
+        make_index(
+            &snapshot.path().to_path_buf(),
+            &files.path().to_path_buf(),
+            &snapshot_name,
+        )
+        .unwrap();
+
+        let index = snapshot.path().join("index.txt");
+        let index_content = fs::read_to_string(&index).unwrap();
+
+        assert_eq!(
+            index_content,
+            format!(
+                "{} {}\n",
+                snapshot_name,
+                files.path().absolutize().unwrap().display()
+            )
+        )
+    }
+
+    #[test]
+    fn index_folder_with_file() {
+        let snapshot_name = get_date_time();
+        let snapshot = tempdir().unwrap();
+        let files = tempdir().unwrap();
+        let dummy_file = files.path().join("dummy_file.txt");
+        File::create(&dummy_file)
+            .unwrap()
+            .write_all(b"hello world")
+            .unwrap();
+
+        make_index(
+            &snapshot.path().to_path_buf(),
+            &files.path().to_path_buf(),
+            &snapshot_name,
+        )
+        .unwrap();
+
+        let index = snapshot.path().join("index.txt");
+        let index_content = fs::read_to_string(&index).unwrap();
+
+        assert_eq!(
+            index_content,
+            format!(
+                "{snap} {}\n{snap} {}\n",
+                files.path().absolutize().unwrap().display(),
+                dummy_file.absolutize().unwrap().display(),
+                snap = snapshot_name,
+            )
+        )
+    }
+}
+
+#[cfg(test)]
 mod snapshot_tests {
     use super::*;
-    use temp_testdir::TempDir;
+    use tempfile::tempdir;
 
     #[test]
     fn backup_folder_does_not_exist() {
         let backup = PathBuf::from("nonexistent");
+        let files = PathBuf::from("nonexistent");
 
-        let snapshot = add_snapshot(&backup);
+        let snapshot = add_snapshot(&backup, &files);
         assert!(snapshot.is_err());
         assert_eq!(
             snapshot.unwrap_err(),
@@ -88,28 +183,34 @@ mod snapshot_tests {
 
     #[test]
     fn snapshot_path_returned() {
-        let tempdir = TempDir::default();
+        let backup = tempdir().unwrap();
+        let files = tempdir().unwrap();
         let current_datetime = get_date_time();
-        let expected_snapshot_path = tempdir.join(current_datetime);
-        let snapshot = add_snapshot(&tempdir.to_path_buf()).unwrap();
+        let expected_snapshot_path = backup.path().join(current_datetime);
+        let snapshot =
+            add_snapshot(&backup.path().to_path_buf(), &files.path().to_path_buf()).unwrap();
         assert_eq!(snapshot, expected_snapshot_path);
     }
 
     #[test]
     fn snapshot_dir_created() {
-        let tempdir = TempDir::default();
-        let snapshot = add_snapshot(&tempdir.to_path_buf()).unwrap();
+        let backup = tempdir().unwrap();
+        let files = tempdir().unwrap();
+        println!("{}", backup.path().display());
+        let snapshot =
+            add_snapshot(&backup.path().to_path_buf(), &files.path().to_path_buf()).unwrap();
         assert!(snapshot.is_dir());
     }
 
     #[test]
     fn snapshot_dir_already_exists() {
-        let tempdir = TempDir::default();
+        let backup = tempdir().unwrap();
+        let files = tempdir().unwrap();
         let current_datetime = get_date_time();
-        let expected_snapshot_path = tempdir.join(&current_datetime);
+        let expected_snapshot_path = backup.path().join(&current_datetime);
         create_dir(&expected_snapshot_path).unwrap();
 
-        let snapshot = add_snapshot(&tempdir.to_path_buf());
+        let snapshot = add_snapshot(&backup.path().to_path_buf(), &files.path().to_path_buf());
         assert!(snapshot.is_err());
         assert_eq!(
             snapshot.unwrap_err(),

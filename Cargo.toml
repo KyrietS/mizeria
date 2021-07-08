@@ -12,8 +12,10 @@ test = false
 doctest = false
 
 [dependencies]
+walkdir = "2.3"
 chrono = "0.4"
 regex = "1.5"
+path-absolutize = "3.0"
 
 [dev-dependencies]
-temp_testdir = "0.2"
+tempfile = "3.2"
