@@ -1,8 +1,9 @@
 use chrono::{Datelike, Timelike};
 use path_absolutize::Absolutize;
-use std::fs::File;
+use std::ffi::OsStr;
+use std::fs::{self, create_dir, create_dir_all, File};
 use std::io::Write;
-use std::{ffi::OsStr, fs::create_dir, path::PathBuf};
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 struct Args {
@@ -56,11 +57,54 @@ fn add_snapshot(backup_path: &PathBuf, files: &PathBuf) -> Result<PathBuf, Strin
     create_dir(&snapshot_path).or(Err("Cannot create directory for a snapshot"))?;
 
     make_index(&snapshot_path, &files, &snapshot_name)?;
-
-    let snapshot_files = snapshot_path.join("files");
-    create_dir(snapshot_files).or(Err("Cannot create directory for snapshot files"))?;
+    copy_files(&snapshot_path, &files)?;
 
     Ok(snapshot_path)
+}
+
+fn copy_files(snapshot: &PathBuf, files: &PathBuf) -> Result<(), String> {
+    let snapshot_files = snapshot.join("files");
+    create_dir(snapshot_files).or(Err("Cannot create directory for snapshot files"))?;
+
+    for entry in WalkDir::new(&files) {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                continue;
+            }
+        };
+
+        let origin = entry.path();
+        let snapshot_origin = map_origin_to_snapshot_path(&origin, snapshot.as_path());
+
+        if origin.is_dir() {
+            let result = create_dir_all(&snapshot_origin);
+            if let Err(e) = result {
+                eprintln!("Cannot create directory at: {}", snapshot_origin.display());
+                eprintln!("{}", e);
+            }
+        } else if origin.is_file() {
+            let result = fs::copy(origin, snapshot_origin);
+            if let Err(e) = result {
+                eprintln!("Cannot copy file from: {}", origin.display());
+                eprintln!("{}", e);
+            }
+        } else {
+            eprintln!("Warning: unknown file type at: {}", origin.display());
+        }
+    }
+
+    Ok(())
+}
+
+pub fn map_origin_to_snapshot_path(origin: &Path, snapshot: &Path) -> PathBuf {
+    let origin_prepared = origin
+        .absolutize()
+        .unwrap()
+        .to_string_lossy()
+        .replace(":", "");
+    snapshot.join("files").join(origin_prepared)
 }
 
 fn make_index(snapshot: &PathBuf, files: &PathBuf, snapshot_name: &String) -> Result<(), String> {

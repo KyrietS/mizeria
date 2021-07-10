@@ -15,7 +15,7 @@ fn run_program_with_args(backup: &TempDir, files: &TempDir) {
 }
 
 #[test]
-fn create_empty_snapshot() {
+fn create_snapshot_with_empty_folder() {
     let backup = tempdir().unwrap();
     let files = tempdir().unwrap();
 
@@ -43,10 +43,9 @@ fn create_empty_snapshot() {
         "snapshot folder name should match the pattern"
     );
 
-    // snapshot should have empty 'files' directory
-    let snapshot_files = snapshot.join("files");
-    assert!(snapshot_files.is_dir());
-    let is_snapshot_files_empty = snapshot_files.read_dir().unwrap().count() == 0;
+    let snapshot_origin = mizeria::map_origin_to_snapshot_path(files.path(), &snapshot);
+    assert!(snapshot_origin.is_dir());
+    let is_snapshot_files_empty = snapshot_origin.read_dir().unwrap().count() == 0;
     assert!(is_snapshot_files_empty);
 
     // snapshot should have index.txt with one record
@@ -64,18 +63,12 @@ fn create_empty_snapshot() {
 }
 
 #[test]
-#[ignore = "copying files not yet implemented"]
 fn create_snapshot_with_one_file() {
     let backup = tempdir().unwrap();
     let files = tempdir().unwrap();
 
     // dummy file to backup
     let dummy_file = files.path().join("dummy_file.txt");
-    let dummy_file_absolute = dummy_file
-        .absolutize()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
     File::create(&dummy_file)
         .unwrap()
         .write_all(b"hello world")
@@ -96,14 +89,18 @@ fn create_snapshot_with_one_file() {
         .path();
     let snapshot_index = snapshot.join("index.txt");
     let snapshot_index_content = fs::read_to_string(&snapshot_index).unwrap();
-    let snapshot_files = snapshot.join("files");
-    let snapshot_dummy_file = snapshot_files.join("dummy_file.txt");
+    let snapshot_dummy_file = mizeria::map_origin_to_snapshot_path(&dummy_file, &snapshot);
     let snapshot_dummy_file_content = fs::read_to_string(&snapshot_dummy_file).unwrap();
 
     assert!(snapshot_dummy_file.is_file());
     assert_eq!(snapshot_dummy_file_content, "hello world");
     assert_eq!(
         snapshot_index_content,
-        format!("{} {}", snapshot_name, dummy_file_absolute)
+        format!(
+            "{snap} {}\n{snap} {}\n",
+            files.path().absolutize().unwrap().display(),
+            dummy_file.absolutize().unwrap().display(),
+            snap = snapshot_name,
+        )
     );
 }
