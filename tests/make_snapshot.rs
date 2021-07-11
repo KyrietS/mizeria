@@ -1,12 +1,9 @@
-// use mizeria;
 use path_absolutize::Absolutize;
 use regex::Regex;
 use std::fs::{self, File};
 use std::io::Write;
 
 mod helpers {
-    use path_absolutize::Absolutize;
-    use std::path::{Path, PathBuf};
     use tempfile::TempDir;
 
     pub fn run_program_with_args(backup: &TempDir, files: &TempDir) {
@@ -31,15 +28,6 @@ mod helpers {
             time.hour(),
             time.minute()
         )
-    }
-
-    pub fn map_origin_to_snapshot_path(origin: &Path, snapshot: &Path) -> PathBuf {
-        let origin_prepared = origin
-            .absolutize()
-            .unwrap()
-            .to_string_lossy()
-            .replace(":", "");
-        snapshot.join("files").join(origin_prepared)
     }
 }
 
@@ -72,7 +60,7 @@ fn create_snapshot_with_empty_folder() {
         "snapshot folder name should match the pattern"
     );
 
-    let snapshot_origin = helpers::map_origin_to_snapshot_path(files.path(), &snapshot);
+    let snapshot_origin = mizeria::helpers::map_origin_to_snapshot_path(files.path(), &snapshot);
     assert!(snapshot_origin.is_dir());
     let is_snapshot_files_empty = snapshot_origin.read_dir().unwrap().count() == 0;
     assert!(is_snapshot_files_empty);
@@ -118,7 +106,7 @@ fn create_snapshot_with_one_file() {
         .path();
     let snapshot_index = snapshot.join("index.txt");
     let snapshot_index_content = fs::read_to_string(&snapshot_index).unwrap();
-    let snapshot_dummy_file = helpers::map_origin_to_snapshot_path(&dummy_file, &snapshot);
+    let snapshot_dummy_file = mizeria::helpers::map_origin_to_snapshot_path(&dummy_file, &snapshot);
     let snapshot_dummy_file_content = fs::read_to_string(&snapshot_dummy_file).unwrap();
 
     assert!(snapshot_dummy_file.is_file());

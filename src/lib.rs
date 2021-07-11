@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-mod helpers;
+pub mod helpers;
 
 struct Args {
     backup: PathBuf,

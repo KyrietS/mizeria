@@ -1,5 +1,11 @@
 # Mizeria – simple backup software
 
+![Lincense](https://img.shields.io/github/license/KyrietS/mizeria)
+![Windows](https://img.shields.io/github/workflow/status/KyrietS/mizeria/Windows/master?label=windows)
+![Linux](https://img.shields.io/github/workflow/status/KyrietS/mizeria/Linux/master?label=linux)
+![macOS](https://img.shields.io/github/workflow/status/KyrietS/mizeria/macOS/master?label=macos)
+![Static Analysis](https://img.shields.io/github/workflow/status/KyrietS/mizeria/Static%20analysis/master?label=static%20analysis)
+
 Mizeria is a simple program for making backups. It is written in Rust and it supports Windows, Linux and macOS. The goal of this project is to provide straightforward and easy to understand structure of a backup.
 
 ## Basic usage
