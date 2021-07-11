@@ -1,10 +1,11 @@
-use chrono::{Datelike, Timelike};
 use path_absolutize::Absolutize;
 use std::ffi::OsStr;
-use std::fs::{self, create_dir, create_dir_all, File};
+use std::fs::{self, File};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use walkdir::WalkDir;
+
+mod helpers;
 
 struct Args {
     backup: PathBuf,
@@ -47,14 +48,14 @@ fn add_snapshot(backup_path: &PathBuf, files: &PathBuf) -> Result<PathBuf, Strin
         Err("Folder with backup does not exist or is not accessible")?;
     }
 
-    let snapshot_name = get_date_time();
+    let snapshot_name = helpers::SnapshotDateTime::now().to_string();
     let snapshot_path = backup_path.join(&snapshot_name);
 
     if snapshot_path.exists() {
         Err(format!("Snapshot name is already used: {}", snapshot_name))?;
     }
 
-    create_dir(&snapshot_path).or(Err("Cannot create directory for a snapshot"))?;
+    fs::create_dir(&snapshot_path).or(Err("Cannot create directory for a snapshot"))?;
 
     make_index(&snapshot_path, &files, &snapshot_name)?;
     copy_files(&snapshot_path, &files)?;
@@ -64,7 +65,7 @@ fn add_snapshot(backup_path: &PathBuf, files: &PathBuf) -> Result<PathBuf, Strin
 
 fn copy_files(snapshot: &PathBuf, files: &PathBuf) -> Result<(), String> {
     let snapshot_files = snapshot.join("files");
-    create_dir(snapshot_files).or(Err("Cannot create directory for snapshot files"))?;
+    fs::create_dir(snapshot_files).or(Err("Cannot create directory for snapshot files"))?;
 
     for entry in WalkDir::new(&files) {
         let entry = match entry {
@@ -76,10 +77,10 @@ fn copy_files(snapshot: &PathBuf, files: &PathBuf) -> Result<(), String> {
         };
 
         let origin = entry.path();
-        let snapshot_origin = map_origin_to_snapshot_path(&origin, snapshot.as_path());
+        let snapshot_origin = helpers::map_origin_to_snapshot_path(&origin, snapshot.as_path());
 
         if origin.is_dir() {
-            let result = create_dir_all(&snapshot_origin);
+            let result = fs::create_dir_all(&snapshot_origin);
             if let Err(e) = result {
                 eprintln!("Cannot create directory at: {}", snapshot_origin.display());
                 eprintln!("{}", e);
@@ -96,15 +97,6 @@ fn copy_files(snapshot: &PathBuf, files: &PathBuf) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-pub fn map_origin_to_snapshot_path(origin: &Path, snapshot: &Path) -> PathBuf {
-    let origin_prepared = origin
-        .absolutize()
-        .unwrap()
-        .to_string_lossy()
-        .replace(":", "");
-    snapshot.join("files").join(origin_prepared)
 }
 
 fn make_index(snapshot: &PathBuf, files: &PathBuf, snapshot_name: &String) -> Result<(), String> {
@@ -126,21 +118,6 @@ fn make_index(snapshot: &PathBuf, files: &PathBuf, snapshot_name: &String) -> Re
     Ok(())
 }
 
-pub fn get_date_time() -> String {
-    let datetime = chrono::offset::Local::now();
-    let date = datetime.date().naive_local();
-    let time = datetime.time();
-
-    format!(
-        "{}-{:02}-{:02}_{:02}.{:02}",
-        date.year(),
-        date.month(),
-        date.day(),
-        time.hour(),
-        time.minute()
-    )
-}
-
 #[cfg(test)]
 mod index_tests {
     use std::fs;
@@ -150,7 +127,7 @@ mod index_tests {
 
     #[test]
     fn index_empty_folder() {
-        let snapshot_name = get_date_time();
+        let snapshot_name = helpers::SnapshotDateTime::now().to_string();
         let snapshot = tempdir().unwrap();
         let files = tempdir().unwrap();
 
@@ -176,7 +153,7 @@ mod index_tests {
 
     #[test]
     fn index_folder_with_file() {
-        let snapshot_name = get_date_time();
+        let snapshot_name = helpers::SnapshotDateTime::now().to_string();
         let snapshot = tempdir().unwrap();
         let files = tempdir().unwrap();
         let dummy_file = files.path().join("dummy_file.txt");
@@ -229,7 +206,7 @@ mod snapshot_tests {
     fn snapshot_path_returned() {
         let backup = tempdir().unwrap();
         let files = tempdir().unwrap();
-        let current_datetime = get_date_time();
+        let current_datetime = helpers::SnapshotDateTime::now().to_string();
         let expected_snapshot_path = backup.path().join(current_datetime);
         let snapshot =
             add_snapshot(&backup.path().to_path_buf(), &files.path().to_path_buf()).unwrap();
@@ -250,9 +227,9 @@ mod snapshot_tests {
     fn snapshot_dir_already_exists() {
         let backup = tempdir().unwrap();
         let files = tempdir().unwrap();
-        let current_datetime = get_date_time();
+        let current_datetime = helpers::SnapshotDateTime::now().to_string();
         let expected_snapshot_path = backup.path().join(&current_datetime);
-        create_dir(&expected_snapshot_path).unwrap();
+        fs::create_dir(&expected_snapshot_path).unwrap();
 
         let snapshot = add_snapshot(&backup.path().to_path_buf(), &files.path().to_path_buf());
         assert!(snapshot.is_err());
