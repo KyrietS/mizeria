@@ -2,7 +2,7 @@ use path_absolutize::Absolutize;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 mod helpers;
@@ -32,7 +32,7 @@ where
     Ok(())
 }
 
-fn parse_args(args: &Vec<String>) -> Result<Args, &'static str> {
+fn parse_args(args: &[String]) -> Result<Args, &'static str> {
     let mut args_iter = args.iter();
     let backup = args_iter.next().ok_or("Backup location is not specified")?;
     let files = args_iter.next().ok_or("Target location is not specified")?;
@@ -43,27 +43,27 @@ fn parse_args(args: &Vec<String>) -> Result<Args, &'static str> {
     })
 }
 
-fn add_snapshot(backup_path: &PathBuf, files: &PathBuf) -> Result<PathBuf, String> {
+fn add_snapshot(backup_path: &Path, files: &Path) -> Result<PathBuf, String> {
     if !backup_path.is_dir() {
-        Err("Folder with backup does not exist or is not accessible")?;
+        return Err("Folder with backup does not exist or is not accessible".into());
     }
 
     let snapshot_name = helpers::SnapshotDateTime::now().to_string();
     let snapshot_path = backup_path.join(&snapshot_name);
 
     if snapshot_path.exists() {
-        Err(format!("Snapshot name is already used: {}", snapshot_name))?;
+        return Err(format!("Snapshot name is already used: {}", snapshot_name));
     }
 
     fs::create_dir(&snapshot_path).or(Err("Cannot create directory for a snapshot"))?;
 
-    make_index(&snapshot_path, &files, &snapshot_name)?;
-    copy_files(&snapshot_path, &files)?;
+    make_index(&snapshot_path, files, &snapshot_name)?;
+    copy_files(&snapshot_path, files)?;
 
     Ok(snapshot_path)
 }
 
-fn copy_files(snapshot: &PathBuf, files: &PathBuf) -> Result<(), String> {
+fn copy_files(snapshot: &Path, files: &Path) -> Result<(), String> {
     let snapshot_files = snapshot.join("files");
     fs::create_dir(snapshot_files).or(Err("Cannot create directory for snapshot files"))?;
 
@@ -77,7 +77,7 @@ fn copy_files(snapshot: &PathBuf, files: &PathBuf) -> Result<(), String> {
         };
 
         let origin = entry.path();
-        let snapshot_origin = helpers::map_origin_to_snapshot_path(&origin, snapshot.as_path());
+        let snapshot_origin = helpers::map_origin_to_snapshot_path(origin, snapshot);
 
         if origin.is_dir() {
             let result = fs::create_dir_all(&snapshot_origin);
@@ -99,7 +99,7 @@ fn copy_files(snapshot: &PathBuf, files: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-fn make_index(snapshot: &PathBuf, files: &PathBuf, snapshot_name: &String) -> Result<(), String> {
+fn make_index(snapshot: &Path, files: &Path, snapshot_name: &str) -> Result<(), String> {
     let snapshot_index = snapshot.join("index.txt");
     println!("Saving index to: {}", snapshot_index.display());
     let mut snapshot_index = File::create(snapshot_index).or(Err("Cannot create index file"))?;
