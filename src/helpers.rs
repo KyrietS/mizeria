@@ -7,9 +7,15 @@ pub struct SnapshotDateTime {
 }
 
 impl SnapshotDateTime {
-    pub fn now() -> SnapshotDateTime {
-        SnapshotDateTime {
+    pub fn now() -> Self {
+        Self {
             inner: chrono::offset::Local::now(),
+        }
+    }
+    pub fn get_next(&self) -> Self {
+        let next_date_time = self.inner + chrono::Duration::minutes(1);
+        Self {
+            inner: next_date_time,
         }
     }
 }

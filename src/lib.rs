@@ -48,15 +48,19 @@ fn add_snapshot(backup_path: &Path, files: &Path) -> Result<PathBuf, String> {
         return Err("Folder with backup does not exist or is not accessible".into());
     }
 
-    let snapshot_name = helpers::SnapshotDateTime::now().to_string();
-    let snapshot_path = backup_path.join(&snapshot_name);
-
-    if snapshot_path.exists() {
-        return Err(format!("Snapshot name is already used: {}", snapshot_name));
-    }
+    let mut snapshot_date_time = helpers::SnapshotDateTime::now();
+    let snapshot_path = loop {
+        let snapshot_name = snapshot_date_time.to_string();
+        let snapshot_path = backup_path.join(snapshot_name);
+        if !snapshot_path.exists() {
+            break snapshot_path;
+        }
+        snapshot_date_time = snapshot_date_time.get_next();
+    };
 
     fs::create_dir(&snapshot_path).or(Err("Cannot create directory for a snapshot"))?;
 
+    let snapshot_name = snapshot_date_time.to_string();
     make_index(&snapshot_path, files, &snapshot_name)?;
     copy_files(&snapshot_path, files)?;
 
@@ -227,16 +231,19 @@ mod snapshot_tests {
     fn snapshot_dir_already_exists() {
         let backup = tempdir().unwrap();
         let files = tempdir().unwrap();
-        let current_datetime = helpers::SnapshotDateTime::now().to_string();
-        let expected_snapshot_path = backup.path().join(&current_datetime);
-        fs::create_dir(&expected_snapshot_path).unwrap();
+        let current_datetime = helpers::SnapshotDateTime::now();
+        let taken_snapshot_path = backup.path().join(&current_datetime.to_string());
+        fs::create_dir(taken_snapshot_path).unwrap();
 
-        let snapshot = add_snapshot(&backup.path().to_path_buf(), &files.path().to_path_buf());
-        assert!(snapshot.is_err());
-        assert_eq!(
-            snapshot.unwrap_err(),
-            format!("Snapshot name is already used: {}", &current_datetime)
-        );
+        let expected_snapshot_path = current_datetime.get_next().to_string();
+
+        let snapshot =
+            add_snapshot(&backup.path().to_path_buf(), &files.path().to_path_buf()).unwrap();
+        assert!(snapshot.is_dir());
+        assert!(snapshot
+            .to_str()
+            .unwrap()
+            .contains(expected_snapshot_path.as_str()));
     }
 }
 
