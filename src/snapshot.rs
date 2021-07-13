@@ -2,6 +2,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use log::{debug, error, trace, warn};
 use path_absolutize::Absolutize;
 use walkdir::WalkDir;
 
@@ -32,7 +33,7 @@ impl Snapshot {
         let index = location.join("index.txt");
         let files = location.join("files");
 
-        println!("Created snapshot: {}", timestamp.to_string());
+        debug!("Created empty snapshot: {}", &timestamp.to_string());
 
         Ok(Snapshot {
             root: root.to_owned(),
@@ -48,6 +49,7 @@ impl Snapshot {
     }
 
     pub fn index_files(&self, files: &Path) -> Result<(), String> {
+        debug!("Started indexing files");
         if !files.exists() {
             return Err(format!("Invalid path: {}", files.display()));
         }
@@ -58,18 +60,21 @@ impl Snapshot {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    eprintln!("Error: {}", e);
+                    warn!("{}", e);
                     continue;
                 }
             };
             let file_path = entry.path().absolutize().unwrap();
             writeln!(index, "{} {}", self.name(), file_path.display())
                 .expect("Error while writing to index.txt");
+            trace!("Indexed: {}", file_path.display());
         }
+        debug!("Finished indexing files");
         Ok(())
     }
 
     pub fn copy_files(&self, files: &Path) -> Result<(), String> {
+        debug!("Started copying files");
         if !files.exists() {
             return Err(format!("Invalid path: {}", files.display()));
         }
@@ -80,32 +85,59 @@ impl Snapshot {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    eprintln!("Error: {}", e);
+                    warn!("{}", e);
                     continue;
                 }
             };
 
             let entry = entry.path();
-            let snapshot_entry = self.to_snapshot_path(&entry);
 
             if entry.is_dir() {
-                let result = fs::create_dir_all(&snapshot_entry);
-                if let Err(e) = result {
-                    eprintln!("Cannot create directory at: {}", snapshot_entry.display());
-                    eprintln!("{}", e);
-                }
+                self.copy_dir_entry(&entry);
             } else if entry.is_file() {
-                let result = fs::copy(entry, snapshot_entry);
-                if let Err(e) = result {
-                    eprintln!("Cannot copy file from: {}", entry.display());
-                    eprintln!("{}", e);
-                }
-            } else {
-                eprintln!("Warning: unknown file type at: {}", entry.display());
+                self.copy_file_entry(&entry)
             }
         }
-
+        debug!("Finished copying files");
         Ok(())
+    }
+
+    fn copy_dir_entry(&self, dir_to_copy: &Path) {
+        let snapshot_entry = self.to_snapshot_path(&dir_to_copy);
+        let result = fs::create_dir_all(&snapshot_entry);
+        trace!(
+            "Createed dir: \"{}\" -> \"{}\"",
+            dir_to_copy.display(),
+            snapshot_entry.display()
+        );
+        if let Err(e) = result {
+            error!(
+                "Cannot create directory: \"{}\" -> \"{}\"",
+                dir_to_copy.display(),
+                snapshot_entry.display()
+            );
+            error!("{}", e);
+        }
+    }
+
+    fn copy_file_entry(&self, file_to_copy: &Path) {
+        let snapshot_entry = self.to_snapshot_path(&file_to_copy);
+        let result = fs::copy(file_to_copy, &snapshot_entry);
+        trace!(
+            "Copied file: \"{}\" -> \"{}\"",
+            file_to_copy.display(),
+            snapshot_entry.display()
+        );
+        if let Err(e) = result {
+            error!(
+                "Cannot copy file: \"{}\" -> \"{}\"",
+                file_to_copy.display(),
+                snapshot_entry.display()
+            );
+            error!("{}", e);
+        } else {
+            warn!("Unknown file type: {}", file_to_copy.display());
+        }
     }
 
     fn to_snapshot_path(&self, entry: &Path) -> PathBuf {
