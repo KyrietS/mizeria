@@ -96,6 +96,8 @@ impl Snapshot {
                 self.copy_dir_entry(&entry);
             } else if entry.is_file() {
                 self.copy_file_entry(&entry)
+            } else {
+                warn!("Entry inaccessible: {}", &entry.display());
             }
         }
         debug!("Finished copying files");
@@ -135,8 +137,6 @@ impl Snapshot {
                 snapshot_entry.display()
             );
             error!("{}", e);
-        } else {
-            warn!("Unknown file type: {}", file_to_copy.display());
         }
     }
 
