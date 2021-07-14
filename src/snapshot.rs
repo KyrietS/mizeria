@@ -1,6 +1,7 @@
+use std::ffi::OsString;
 use std::fs::{self, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::io::{self, Write};
+use std::path::{Component, Components, Path, PathBuf, Prefix, PrefixComponent};
 
 use log::{debug, error, trace, warn};
 use path_absolutize::Absolutize;
@@ -105,54 +106,79 @@ impl Snapshot {
     }
 
     fn copy_dir_entry(&self, dir_to_copy: &Path) {
-        let snapshot_entry = self.to_snapshot_path(&dir_to_copy);
-        let result = fs::create_dir_all(&snapshot_entry);
+        if let Err(e) = self.try_copy_dir(dir_to_copy) {
+            error!("Cannot create directory: {}", dir_to_copy.display());
+            error!("{}", e);
+        }
+    }
+
+    fn try_copy_dir(&self, dir_to_copy: &Path) -> io::Result<()> {
+        let snapshot_entry = self.to_snapshot_path(&dir_to_copy)?;
+        fs::create_dir_all(&snapshot_entry)?;
         trace!(
             "Createed dir: \"{}\" -> \"{}\"",
             dir_to_copy.display(),
             snapshot_entry.display()
         );
-        if let Err(e) = result {
-            error!(
-                "Cannot create directory: \"{}\" -> \"{}\"",
-                dir_to_copy.display(),
-                snapshot_entry.display()
-            );
+        Ok(())
+    }
+
+    fn copy_file_entry(&self, file_to_copy: &Path) {
+        if let Err(e) = self.try_copy_file(file_to_copy) {
+            error!("Cannot copy file: {}", file_to_copy.display());
             error!("{}", e);
         }
     }
 
-    fn copy_file_entry(&self, file_to_copy: &Path) {
-        let snapshot_entry = self.to_snapshot_path(&file_to_copy);
-        let result = fs::copy(file_to_copy, &snapshot_entry);
+    fn try_copy_file(&self, file_to_copy: &Path) -> io::Result<()> {
+        let snapshot_entry = self.to_snapshot_path(&file_to_copy)?;
+        fs::copy(file_to_copy, &snapshot_entry)?;
         trace!(
             "Copied file: \"{}\" -> \"{}\"",
             file_to_copy.display(),
             snapshot_entry.display()
         );
-        if let Err(e) = result {
-            error!(
-                "Cannot copy file: \"{}\" -> \"{}\"",
-                file_to_copy.display(),
-                snapshot_entry.display()
-            );
-            error!("{}", e);
-        }
+        Ok(())
     }
 
-    fn to_snapshot_path(&self, entry: &Path) -> PathBuf {
-        let snapshot_entry = entry.absolutize().unwrap();
+    fn to_snapshot_path(&self, entry: &Path) -> io::Result<PathBuf> {
+        let absolute_entry = fs::canonicalize(entry)?;
+        let snapshot_relative_entry =
+            Self::join_components_to_relative_path(absolute_entry.components());
 
-        // remove leading '/'.
-        let snapshot_entry = match snapshot_entry.strip_prefix("/") {
-            Ok(not_absolute) => not_absolute,
-            Err(_) => snapshot_entry.as_ref(),
-        };
+        Ok(self.files.join(snapshot_relative_entry))
+    }
 
-        // remove ':' from 'C:/folder'.
-        let snapshot_entry = snapshot_entry.to_string_lossy().replace(":", "");
+    fn join_components_to_relative_path(components: Components) -> PathBuf {
+        let mut path = PathBuf::new();
 
-        self.files.join(snapshot_entry)
+        for component in components {
+            let component_to_join = match component {
+                Component::Prefix(prefix) => Some(Self::get_disk_letter_from_prefix(prefix)),
+                Component::RootDir => None,
+                Component::Normal(comp) => Some(comp.to_owned()),
+                _ => None,
+            };
+
+            if let Some(ccc) = component_to_join {
+                path.push(ccc);
+            }
+        }
+
+        path
+    }
+
+    fn get_disk_letter_from_prefix(prefix: PrefixComponent) -> OsString {
+        match prefix.kind() {
+            Prefix::Verbatim(prefix) => prefix.to_owned(),
+            Prefix::VerbatimDisk(letter) | Prefix::Disk(letter) => {
+                OsString::from(String::from_utf8_lossy(&[letter]).as_ref())
+            }
+            Prefix::DeviceNS(prefix) => prefix.to_owned(),
+            Prefix::VerbatimUNC(first, second) | Prefix::UNC(first, second) => {
+                PathBuf::from(first).join(second).as_os_str().to_owned()
+            }
+        }
     }
 }
 
@@ -193,10 +219,53 @@ impl ToString for Timestamp {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use super::*;
+    use std::fs;
     use tempfile;
+
+    #[test]
+    #[cfg_attr(unix, ignore)]
+    fn join_windows_verbatim_path() {
+        let windows_path = Path::new(r"\\?\C:\dir_1\dir_2\file.txt");
+        let rel_path = Snapshot::join_components_to_relative_path(windows_path.components());
+        assert_eq!(rel_path, Path::new(r"C\dir_1\dir_2\file.txt"));
+    }
+    #[test]
+    #[cfg_attr(unix, ignore)]
+    fn join_windows_disk_path() {
+        let windows_path = Path::new(r"C:\dir_1\file.txt");
+        let rel_path = Snapshot::join_components_to_relative_path(windows_path.components());
+        assert_eq!(rel_path, Path::new(r"C\dir_1\file.txt"));
+    }
+
+    #[test]
+    #[cfg_attr(unix, ignore)]
+    fn join_windows_disk_only_path() {
+        let windows_path = Path::new(r"C:\");
+        let rel_path = Snapshot::join_components_to_relative_path(windows_path.components());
+        assert_eq!(rel_path, Path::new(r"C"));
+
+        let windows_verbatim_path = Path::new(r"\\?\C:\");
+        let rel_path =
+            Snapshot::join_components_to_relative_path(windows_verbatim_path.components());
+        assert_eq!(rel_path, Path::new(r"C"));
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn join_unix_path() {
+        let unix_path = Path::new("/dir_1/dir_2/file.txt");
+        let rel_path = Snapshot::join_components_to_relative_path(unix_path.components());
+        assert_eq!(rel_path, Path::new("dir_1/dir_2/file.txt"));
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn join_unix_root_path_only() {
+        let unix_path = Path::new("/");
+        let rel_path = Snapshot::join_components_to_relative_path(unix_path.components());
+        assert_eq!(rel_path, Path::new(""));
+    }
 
     #[test]
     fn create_snapshot_in_nonexistent_folder() {
