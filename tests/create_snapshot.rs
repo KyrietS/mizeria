@@ -1,4 +1,3 @@
-use path_absolutize::Absolutize;
 use regex::Regex;
 use std::borrow::Borrow;
 use std::fs::{self, File};
@@ -6,6 +5,8 @@ use std::io::Write;
 use std::path::Path;
 
 mod helpers {
+    use std::path::{Path, PathBuf};
+
     use tempfile::TempDir;
 
     pub fn run_program_with_args(backup: &TempDir, files: &TempDir) {
@@ -30,6 +31,10 @@ mod helpers {
             time.hour(),
             time.minute()
         )
+    }
+
+    pub fn get_entry_from(folder: &Path) -> PathBuf {
+        folder.read_dir().unwrap().next().unwrap().unwrap().path()
     }
 }
 
@@ -73,7 +78,7 @@ fn create_snapshot_with_empty_folder() {
     let snapshot = snapshots.first().unwrap().as_ref().unwrap().path();
     assert_snapshot_exists(snapshot.as_path());
 
-    let snapshot_origin = mizeria::helpers::map_origin_to_snapshot_path(files.path(), &snapshot);
+    let snapshot_origin = snapshot.join(files.path().canonicalize().unwrap());
     assert!(snapshot_origin.is_dir());
     let is_snapshot_files_empty = snapshot_origin.read_dir().unwrap().count() == 0;
     assert!(is_snapshot_files_empty);
@@ -86,7 +91,7 @@ fn create_snapshot_with_empty_folder() {
         format!(
             "{} {}\n",
             snapshot.file_name().unwrap().to_string_lossy(),
-            files.path().absolutize().unwrap().display()
+            files.path().canonicalize().unwrap().display()
         )
     );
 }
@@ -108,17 +113,19 @@ fn create_snapshot_with_one_file() {
     helpers::run_program_with_args(&backup, &files);
 
     // snapshot
-    let snapshot = backup
-        .path()
-        .read_dir()
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
+    let snapshot = helpers::get_entry_from(backup.path());
     let snapshot_index = snapshot.join("index.txt");
     let snapshot_index_content = fs::read_to_string(&snapshot_index).unwrap();
-    let snapshot_dummy_file = mizeria::helpers::map_origin_to_snapshot_path(&dummy_file, &snapshot);
+
+    // traverse snapshot files to get into dummy_file.txt
+    let mut dir_walker = snapshot.join("files");
+    let snapshot_dummy_file = loop {
+        if dir_walker.is_file() {
+            break dir_walker;
+        }
+        dir_walker = helpers::get_entry_from(dir_walker.as_path());
+    };
+
     let snapshot_dummy_file_content = fs::read_to_string(&snapshot_dummy_file).unwrap();
 
     assert!(snapshot_dummy_file.is_file());
@@ -127,8 +134,8 @@ fn create_snapshot_with_one_file() {
         snapshot_index_content,
         format!(
             "{snap} {}\n{snap} {}\n",
-            files.path().absolutize().unwrap().display(),
-            dummy_file.absolutize().unwrap().display(),
+            files.path().canonicalize().unwrap().display(),
+            dummy_file.canonicalize().unwrap().display(),
             snap = snapshot_name,
         )
     );

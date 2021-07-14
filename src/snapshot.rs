@@ -4,7 +4,6 @@ use std::io::{self, Write};
 use std::path::{Component, Components, Path, PathBuf, Prefix, PrefixComponent};
 
 use log::{debug, error, trace, warn};
-use path_absolutize::Absolutize;
 use walkdir::WalkDir;
 
 #[derive(Debug)]
@@ -65,7 +64,10 @@ impl Snapshot {
                     continue;
                 }
             };
-            let file_path = entry.path().absolutize().unwrap();
+            let file_path = entry
+                .path()
+                .canonicalize()
+                .or(Err("Cannot resolve file path"))?;
             writeln!(index, "{} {}", self.name(), file_path.display())
                 .expect("Error while writing to index.txt");
             trace!("Indexed: {}", file_path.display());
@@ -311,7 +313,7 @@ mod tests {
             format!(
                 "{} {}\n",
                 snapshot.name(),
-                files.path().absolutize().unwrap().display()
+                files.path().canonicalize().unwrap().display()
             )
         )
     }

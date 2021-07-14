@@ -88,6 +88,7 @@ fn init_logger(log_level: LevelFilter) {
         .write_style(WriteStyle::Auto)
         .format_module_path(false)
         .format_timestamp(None)
+        .target(env_logger::Target::Stderr)
         .try_init()
         .ok();
 }
