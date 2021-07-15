@@ -26,7 +26,7 @@ where
     let args = parse_args(&args)?;
     init_logger(args.log_level);
 
-    let snapshot = Snapshot::create(&args.backup)?;
+    let mut snapshot = Snapshot::create(&args.backup)?;
     snapshot.index_files(&args.files)?;
     snapshot.copy_files(&args.files)?;
     println!("Created snapshot: {}", snapshot.name());

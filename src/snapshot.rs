@@ -1,17 +1,22 @@
-use std::ffi::OsString;
-use std::fs::{self, File};
-use std::io::{self, Write};
-use std::path::{Component, Components, Path, PathBuf, Prefix, PrefixComponent};
+mod index;
+mod timestamp;
 
 use log::{debug, error, trace, warn};
+use std::ffi::OsString;
+use std::fs;
+use std::io;
+use std::path::{Component, Components, Path, PathBuf, Prefix, PrefixComponent};
 use walkdir::WalkDir;
 
-#[derive(Debug)]
+use index::Index;
+use timestamp::Timestamp;
+
+#[allow(dead_code)]
 pub struct Snapshot {
-    root: PathBuf,
-    location: PathBuf,
+    root: PathBuf,     // unused
+    location: PathBuf, // unused
     timestamp: Timestamp,
-    index: PathBuf,
+    index: Index,
     files: PathBuf,
 }
 
@@ -30,7 +35,7 @@ impl Snapshot {
             }
             timestamp = timestamp.get_next();
         };
-        let index = location.join("index.txt");
+        let index = Index::new(timestamp.clone(), location.join("index.txt"));
         let files = location.join("files");
 
         debug!("Created empty snapshot: {}", &timestamp.to_string());
@@ -48,13 +53,11 @@ impl Snapshot {
         self.timestamp.to_string()
     }
 
-    pub fn index_files(&self, files: &Path) -> Result<(), String> {
+    pub fn index_files(&mut self, files: &Path) -> Result<(), String> {
         debug!("Started indexing files");
         if !files.exists() {
             return Err(format!("Invalid path: {}", files.display()));
         }
-
-        let mut index = File::create(&self.index).or(Err("Cannot create index file"))?;
 
         for entry in WalkDir::new(&files) {
             let entry = match entry {
@@ -68,10 +71,10 @@ impl Snapshot {
                 .path()
                 .canonicalize()
                 .or(Err("Cannot resolve file path"))?;
-            writeln!(index, "{} {}", self.name(), file_path.display())
-                .expect("Error while writing to index.txt");
             trace!("Indexed: {}", file_path.display());
+            self.index.push(&self.timestamp, file_path);
         }
+        self.index.save().or(Err("Error while saving index.txt"))?;
         debug!("Finished indexing files");
         Ok(())
     }
@@ -184,41 +187,6 @@ impl Snapshot {
     }
 }
 
-#[derive(PartialEq, PartialOrd, Debug)]
-pub struct Timestamp {
-    inner: chrono::DateTime<chrono::Local>,
-}
-
-impl Timestamp {
-    pub fn now() -> Self {
-        Self {
-            inner: chrono::offset::Local::now(),
-        }
-    }
-    pub fn get_next(&self) -> Self {
-        let next_date_time = self.inner + chrono::Duration::minutes(1);
-        Self {
-            inner: next_date_time,
-        }
-    }
-}
-
-impl ToString for Timestamp {
-    fn to_string(&self) -> String {
-        use chrono::{Datelike, Timelike};
-        let date = self.inner.date();
-        let time = self.inner.time();
-        format!(
-            "{}-{:02}-{:02}_{:02}.{:02}",
-            date.year(),
-            date.month(),
-            date.day(),
-            time.hour(),
-            time.minute()
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,7 +243,7 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.err().unwrap(),
             "Folder with backup does not exist or is not accessible"
         );
     }
@@ -292,7 +260,7 @@ mod tests {
     #[test]
     fn index_invalid_path() {
         let root = tempfile::tempdir().unwrap();
-        let snapshot = Snapshot::create(root.path()).unwrap();
+        let mut snapshot = Snapshot::create(root.path()).unwrap();
 
         let result = snapshot.index_files(Path::new("incorrect path"));
         assert!(result.is_err());
@@ -302,11 +270,11 @@ mod tests {
     fn index_empty_folder() {
         let root = tempfile::tempdir().unwrap();
         let files = tempfile::tempdir().unwrap();
-        let snapshot = Snapshot::create(root.path()).unwrap();
+        let mut snapshot = Snapshot::create(root.path()).unwrap();
 
         snapshot.index_files(files.path()).unwrap();
 
-        let index_content = fs::read_to_string(&snapshot.index).unwrap();
+        let index_content = fs::read_to_string(snapshot.location.join("index.txt")).unwrap();
 
         assert_eq!(
             index_content,
