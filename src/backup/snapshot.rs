@@ -66,13 +66,24 @@ impl Snapshot {
         self.timestamp.to_string()
     }
 
-    pub fn index_files(&mut self, files: &Path) -> Result<(), String> {
+    pub fn index_files(&mut self, files: &[PathBuf]) -> Result<(), String> {
         debug!("Started indexing files");
-        if !files.exists() {
-            return Err(format!("Invalid path: {}", files.display()));
+
+        for path in files {
+            self.add_path_to_index(path)?;
         }
 
-        for entry in WalkDir::new(&files) {
+        self.index.save().or(Err("Error while saving index.txt"))?;
+        debug!("Finished indexing files");
+        Ok(())
+    }
+
+    fn add_path_to_index(&mut self, path: &Path) -> Result<(), String> {
+        if !path.exists() {
+            return Err(format!("Invalid path: {}", path.display()));
+        }
+
+        for entry in WalkDir::new(&path) {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
@@ -87,20 +98,28 @@ impl Snapshot {
             trace!("Indexed: {}", file_path.display());
             self.index.push(&self.timestamp, file_path);
         }
-        self.index.save().or(Err("Error while saving index.txt"))?;
-        debug!("Finished indexing files");
         Ok(())
     }
 
-    pub fn copy_files(&self, files: &Path) -> Result<(), String> {
+    pub fn copy_files(&self, files: &[PathBuf]) -> Result<(), String> {
         debug!("Started copying files");
-        if !files.exists() {
-            return Err(format!("Invalid path: {}", files.display()));
-        }
 
         fs::create_dir(&self.files).or(Err("Cannot create directory for snapshot files"))?;
 
-        for entry in WalkDir::new(&files) {
+        for path in files {
+            self.copy_from_path(path)?;
+        }
+
+        debug!("Finished copying files");
+        Ok(())
+    }
+
+    fn copy_from_path(&self, path: &Path) -> Result<(), String> {
+        if !path.exists() {
+            return Err(format!("Invalid path: {}", path.display()));
+        }
+
+        for entry in WalkDir::new(path) {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
@@ -119,7 +138,6 @@ impl Snapshot {
                 warn!("Entry inaccessible: {}", &entry.display());
             }
         }
-        debug!("Finished copying files");
         Ok(())
     }
 
@@ -286,7 +304,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let snapshot = Snapshot::create(root.path()).unwrap();
 
-        let result = snapshot.copy_files(Path::new("incorrect path"));
+        let result = snapshot.copy_files(&[PathBuf::from("incorrect path")]);
         assert!(result.is_err());
     }
 
@@ -295,7 +313,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let mut snapshot = Snapshot::create(root.path()).unwrap();
 
-        let result = snapshot.index_files(Path::new("incorrect path"));
+        let result = snapshot.index_files(&[PathBuf::from("incorrect path")]);
         assert!(result.is_err());
     }
 
@@ -305,7 +323,7 @@ mod tests {
         let files = tempfile::tempdir().unwrap();
         let mut snapshot = Snapshot::create(root.path()).unwrap();
 
-        snapshot.index_files(files.path()).unwrap();
+        snapshot.index_files(&[files.path().to_owned()]).unwrap();
 
         let index_content = fs::read_to_string(snapshot.location.join("index.txt")).unwrap();
 

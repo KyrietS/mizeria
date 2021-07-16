@@ -39,7 +39,7 @@ impl Backup {
         self.snapshots.last()
     }
 
-    pub fn add_snapshot(&mut self, files: &Path) -> Result<(), String> {
+    pub fn add_snapshot(&mut self, files: &[PathBuf]) -> Result<(), String> {
         let mut snapshot = Snapshot::create(self.location.as_path())?;
         snapshot.index_files(files)?;
         snapshot.copy_files(files)?;
