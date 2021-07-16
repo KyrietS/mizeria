@@ -1,24 +1,22 @@
+mod files;
 mod index;
 mod timestamp;
 
-use log::{debug, error, trace, warn};
-use std::borrow::Borrow;
-use std::cmp::Ordering;
-use std::ffi::OsString;
-use std::fs;
-use std::io;
-use std::path::{Component, Components, Path, PathBuf, Prefix, PrefixComponent};
-use walkdir::WalkDir;
-
+use files::Files;
 use index::Index;
+use log::{debug, trace, warn};
+use std::cmp::Ordering;
+use std::fs;
+use std::path::{Path, PathBuf};
 use timestamp::Timestamp;
+use walkdir::WalkDir;
 
 pub struct Snapshot {
     #[allow(dead_code)]
     location: PathBuf,
     timestamp: Timestamp,
     index: Index,
-    files: PathBuf,
+    files: Files,
 }
 
 impl Snapshot {
@@ -37,7 +35,7 @@ impl Snapshot {
             timestamp = timestamp.get_next();
         };
         let index = Index::new(location.join("index.txt"));
-        let files = location.join("files");
+        let files = Files::new(location.join("files"));
 
         debug!("Created empty snapshot: {}", &timestamp.to_string());
 
@@ -51,9 +49,9 @@ impl Snapshot {
 
     pub fn open(location: &Path) -> Option<Snapshot> {
         let timestamp = Timestamp::parse_from(location.file_name()?.to_str()?)?;
-        let index = location.join("index.txt");
-        let index = Index::open(index.borrow()).ok()?;
-        let files = location.join("files");
+        let index = Index::open(location.join("index.txt")).ok()?;
+        let files = Files::new(location.join("files"));
+
         Some(Snapshot {
             location: location.to_owned(),
             timestamp,
@@ -101,120 +99,15 @@ impl Snapshot {
         Ok(())
     }
 
-    pub fn copy_files(&self, files: &[PathBuf]) -> Result<(), String> {
+    pub fn copy_indexed_files(&self) -> Result<(), String> {
         debug!("Started copying files");
 
-        fs::create_dir(&self.files).or(Err("Cannot create directory for snapshot files"))?;
-
-        for path in files {
-            self.copy_from_path(path)?;
-        }
+        let index_entries = self.index.entries.iter();
+        let entries_to_copy = index_entries.map(|e| e.path.as_path());
+        self.files.copy_all(entries_to_copy)?;
 
         debug!("Finished copying files");
         Ok(())
-    }
-
-    fn copy_from_path(&self, path: &Path) -> Result<(), String> {
-        if !path.exists() {
-            return Err(format!("Invalid path: {}", path.display()));
-        }
-
-        for entry in WalkDir::new(path) {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(e) => {
-                    warn!("{}", e);
-                    continue;
-                }
-            };
-
-            let entry = entry.path();
-
-            if entry.is_dir() {
-                self.copy_dir_entry(&entry);
-            } else if entry.is_file() {
-                self.copy_file_entry(&entry)
-            } else {
-                warn!("Entry inaccessible: {}", &entry.display());
-            }
-        }
-        Ok(())
-    }
-
-    fn copy_dir_entry(&self, dir_to_copy: &Path) {
-        if let Err(e) = self.try_copy_dir(dir_to_copy) {
-            error!("Cannot create directory: {}", dir_to_copy.display());
-            error!("{}", e);
-        }
-    }
-
-    fn try_copy_dir(&self, dir_to_copy: &Path) -> io::Result<()> {
-        let snapshot_entry = self.to_snapshot_path(&dir_to_copy)?;
-        fs::create_dir_all(&snapshot_entry)?;
-        trace!(
-            "Createed dir: \"{}\" -> \"{}\"",
-            dir_to_copy.display(),
-            snapshot_entry.display()
-        );
-        Ok(())
-    }
-
-    fn copy_file_entry(&self, file_to_copy: &Path) {
-        if let Err(e) = self.try_copy_file(file_to_copy) {
-            error!("Cannot copy file: {}", file_to_copy.display());
-            error!("{}", e);
-        }
-    }
-
-    fn try_copy_file(&self, file_to_copy: &Path) -> io::Result<()> {
-        let snapshot_entry = self.to_snapshot_path(&file_to_copy)?;
-        fs::copy(file_to_copy, &snapshot_entry)?;
-        trace!(
-            "Copied file: \"{}\" -> \"{}\"",
-            file_to_copy.display(),
-            snapshot_entry.display()
-        );
-        Ok(())
-    }
-
-    fn to_snapshot_path(&self, entry: &Path) -> io::Result<PathBuf> {
-        let absolute_entry = fs::canonicalize(entry)?;
-        let snapshot_relative_entry =
-            Self::join_components_to_relative_path(absolute_entry.components());
-
-        Ok(self.files.join(snapshot_relative_entry))
-    }
-
-    fn join_components_to_relative_path(components: Components) -> PathBuf {
-        let mut path = PathBuf::new();
-
-        for component in components {
-            let component_to_join = match component {
-                Component::Prefix(prefix) => Some(Self::get_disk_letter_from_prefix(prefix)),
-                Component::RootDir => None,
-                Component::Normal(comp) => Some(comp.to_owned()),
-                _ => None,
-            };
-
-            if let Some(ccc) = component_to_join {
-                path.push(ccc);
-            }
-        }
-
-        path
-    }
-
-    fn get_disk_letter_from_prefix(prefix: PrefixComponent) -> OsString {
-        match prefix.kind() {
-            Prefix::Verbatim(prefix) => prefix.to_owned(),
-            Prefix::VerbatimDisk(letter) | Prefix::Disk(letter) => {
-                OsString::from(String::from_utf8_lossy(&[letter]).as_ref())
-            }
-            Prefix::DeviceNS(prefix) => prefix.to_owned(),
-            Prefix::VerbatimUNC(first, second) | Prefix::UNC(first, second) => {
-                PathBuf::from(first).join(second).as_os_str().to_owned()
-            }
-        }
     }
 }
 
@@ -245,50 +138,6 @@ mod tests {
     use tempfile;
 
     #[test]
-    #[cfg_attr(unix, ignore)]
-    fn join_windows_verbatim_path() {
-        let windows_path = Path::new(r"\\?\C:\dir_1\dir_2\file.txt");
-        let rel_path = Snapshot::join_components_to_relative_path(windows_path.components());
-        assert_eq!(rel_path, Path::new(r"C\dir_1\dir_2\file.txt"));
-    }
-    #[test]
-    #[cfg_attr(unix, ignore)]
-    fn join_windows_disk_path() {
-        let windows_path = Path::new(r"C:\dir_1\file.txt");
-        let rel_path = Snapshot::join_components_to_relative_path(windows_path.components());
-        assert_eq!(rel_path, Path::new(r"C\dir_1\file.txt"));
-    }
-
-    #[test]
-    #[cfg_attr(unix, ignore)]
-    fn join_windows_disk_only_path() {
-        let windows_path = Path::new(r"C:\");
-        let rel_path = Snapshot::join_components_to_relative_path(windows_path.components());
-        assert_eq!(rel_path, Path::new(r"C"));
-
-        let windows_verbatim_path = Path::new(r"\\?\C:\");
-        let rel_path =
-            Snapshot::join_components_to_relative_path(windows_verbatim_path.components());
-        assert_eq!(rel_path, Path::new(r"C"));
-    }
-
-    #[test]
-    #[cfg_attr(windows, ignore)]
-    fn join_unix_path() {
-        let unix_path = Path::new("/dir_1/dir_2/file.txt");
-        let rel_path = Snapshot::join_components_to_relative_path(unix_path.components());
-        assert_eq!(rel_path, Path::new("dir_1/dir_2/file.txt"));
-    }
-
-    #[test]
-    #[cfg_attr(windows, ignore)]
-    fn join_unix_root_path_only() {
-        let unix_path = Path::new("/");
-        let rel_path = Snapshot::join_components_to_relative_path(unix_path.components());
-        assert_eq!(rel_path, Path::new(""));
-    }
-
-    #[test]
     fn create_snapshot_in_nonexistent_folder() {
         let result = Snapshot::create(Path::new("nonexistent"));
 
@@ -297,15 +146,6 @@ mod tests {
             result.err().unwrap(),
             "Folder with backup does not exist or is not accessible"
         );
-    }
-
-    #[test]
-    fn copy_files_from_invalid_path() {
-        let root = tempfile::tempdir().unwrap();
-        let snapshot = Snapshot::create(root.path()).unwrap();
-
-        let result = snapshot.copy_files(&[PathBuf::from("incorrect path")]);
-        assert!(result.is_err());
     }
 
     #[test]

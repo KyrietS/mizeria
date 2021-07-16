@@ -1,13 +1,13 @@
 use std::borrow::Borrow;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::timestamp::Timestamp;
 
 pub struct Index {
-    location: PathBuf,
-    entries: Vec<IndexEntry>,
+    pub location: PathBuf,
+    pub entries: Vec<IndexEntry>,
 }
 
 impl Index {
@@ -18,8 +18,8 @@ impl Index {
         }
     }
 
-    pub fn open(path: &Path) -> Result<Self, String> {
-        let file = File::open(path).or(Err("Cannot open index.txt"))?;
+    pub fn open(path: PathBuf) -> Result<Self, String> {
+        let file = File::open(&path).or(Err("Cannot open index.txt"))?;
         let file = BufReader::new(&file);
         let mut entries = Vec::new();
         for line in file.lines() {
@@ -28,7 +28,7 @@ impl Index {
             entries.push(index_entry);
         }
         let index = Index {
-            location: path.to_owned(),
+            location: path,
             entries,
         };
         Ok(index)
@@ -53,9 +53,9 @@ impl Index {
     }
 }
 
-struct IndexEntry {
-    timestamp: Timestamp,
-    path: PathBuf,
+pub struct IndexEntry {
+    pub timestamp: Timestamp,
+    pub path: PathBuf,
 }
 
 impl IndexEntry {
@@ -77,6 +77,8 @@ impl ToString for IndexEntry {
 
 #[cfg(test)]
 mod index_tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
@@ -87,7 +89,7 @@ mod index_tests {
         writeln!(file, "2021-07-16_18.34 /some path/with spaces").unwrap();
         writeln!(file, "2021-07-17_18.34 /another path").unwrap();
 
-        let index = Index::open(&file_path).unwrap();
+        let index = Index::open(file_path.clone()).unwrap();
 
         assert_eq!(file_path, index.location);
         assert_eq!(index.entries[0].path, Path::new("/some path/with spaces"));
@@ -103,7 +105,7 @@ mod index_tests {
         let mut file = File::create(&file_path).unwrap();
         writeln!(file, "foo").unwrap();
 
-        let result = Index::open(&file_path);
+        let result = Index::open(file_path.clone());
         assert!(result.is_err());
     }
 }
