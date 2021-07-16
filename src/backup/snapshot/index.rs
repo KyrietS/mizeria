@@ -5,24 +5,20 @@ use std::path::{Path, PathBuf};
 
 use super::timestamp::Timestamp;
 
-#[allow(dead_code)]
 pub struct Index {
-    timestamp: Timestamp,
     location: PathBuf,
     entries: Vec<IndexEntry>,
 }
 
 impl Index {
-    pub fn new(timestamp: Timestamp, location: PathBuf) -> Self {
+    pub fn new(location: PathBuf) -> Self {
         Self {
-            timestamp,
             location,
             entries: vec![],
         }
     }
 
-    #[allow(dead_code)]
-    pub fn open(path: &Path, timestamp: &Timestamp) -> Result<Self, String> {
+    pub fn open(path: &Path) -> Result<Self, String> {
         let file = File::open(path).or(Err("Cannot open index.txt"))?;
         let file = BufReader::new(&file);
         let mut entries = Vec::new();
@@ -32,7 +28,6 @@ impl Index {
             entries.push(index_entry);
         }
         let index = Index {
-            timestamp: timestamp.clone(),
             location: path.to_owned(),
             entries,
         };
@@ -67,7 +62,7 @@ impl IndexEntry {
     fn from_line(line: &str) -> Option<Self> {
         let (timestamp_slice, path_slice) = line.split_once(' ')?;
         let entry = Self {
-            timestamp: Timestamp::from(timestamp_slice)?,
+            timestamp: Timestamp::parse_from(timestamp_slice)?,
             path: PathBuf::from(path_slice.trim()),
         };
         Some(entry)
@@ -92,10 +87,8 @@ mod index_tests {
         writeln!(file, "2021-07-16_18.34 /some path/with spaces").unwrap();
         writeln!(file, "2021-07-17_18.34 /another path").unwrap();
 
-        let timestamp = Timestamp::from("2021-07-15_18.34").unwrap();
-        let index = Index::open(&file_path, &timestamp).unwrap();
+        let index = Index::open(&file_path).unwrap();
 
-        assert_eq!(timestamp.to_string(), index.timestamp.to_string());
         assert_eq!(file_path, index.location);
         assert_eq!(index.entries[0].path, Path::new("/some path/with spaces"));
         assert_eq!(index.entries[1].path, Path::new("/another path"));
@@ -110,8 +103,7 @@ mod index_tests {
         let mut file = File::create(&file_path).unwrap();
         writeln!(file, "foo").unwrap();
 
-        let timestamp = Timestamp::from("2021-07-15_18.34").unwrap();
-        let result = Index::open(&file_path, &timestamp);
+        let result = Index::open(&file_path);
         assert!(result.is_err());
     }
 }

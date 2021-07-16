@@ -1,12 +1,11 @@
+use backup::Backup;
 use clap::{App, AppSettings, Arg};
 use env_logger::{Builder, WriteStyle};
 use log::LevelFilter;
-use snapshot::Snapshot;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-pub mod helpers;
-mod snapshot;
+mod backup;
 
 struct Args {
     backup: PathBuf,
@@ -26,10 +25,8 @@ where
     let args = parse_args(&args)?;
     init_logger(args.log_level);
 
-    let mut snapshot = Snapshot::create(&args.backup)?;
-    snapshot.index_files(&args.files)?;
-    snapshot.copy_files(&args.files)?;
-    println!("Created snapshot: {}", snapshot.name());
+    let mut backup = Backup::open(args.backup.as_path())?;
+    backup.add_snapshot(args.files.as_path())?;
 
     Ok(())
 }

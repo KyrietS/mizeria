@@ -2,6 +2,8 @@ mod index;
 mod timestamp;
 
 use log::{debug, error, trace, warn};
+use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
@@ -11,10 +13,9 @@ use walkdir::WalkDir;
 use index::Index;
 use timestamp::Timestamp;
 
-#[allow(dead_code)]
 pub struct Snapshot {
-    root: PathBuf,     // unused
-    location: PathBuf, // unused
+    #[allow(dead_code)]
+    location: PathBuf,
     timestamp: Timestamp,
     index: Index,
     files: PathBuf,
@@ -35,14 +36,26 @@ impl Snapshot {
             }
             timestamp = timestamp.get_next();
         };
-        let index = Index::new(timestamp.clone(), location.join("index.txt"));
+        let index = Index::new(location.join("index.txt"));
         let files = location.join("files");
 
         debug!("Created empty snapshot: {}", &timestamp.to_string());
 
         Ok(Snapshot {
-            root: root.to_owned(),
             location,
+            timestamp,
+            index,
+            files,
+        })
+    }
+
+    pub fn open(location: &Path) -> Option<Snapshot> {
+        let timestamp = Timestamp::parse_from(location.file_name()?.to_str()?)?;
+        let index = location.join("index.txt");
+        let index = Index::open(index.borrow()).ok()?;
+        let files = location.join("files");
+        Some(Snapshot {
+            location: location.to_owned(),
             timestamp,
             index,
             files,
@@ -184,6 +197,26 @@ impl Snapshot {
                 PathBuf::from(first).join(second).as_os_str().to_owned()
             }
         }
+    }
+}
+
+impl PartialEq for Snapshot {
+    fn eq(&self, other: &Self) -> bool {
+        self.timestamp == other.timestamp
+    }
+}
+
+impl PartialOrd for Snapshot {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.timestamp.partial_cmp(&other.timestamp)
+    }
+}
+
+impl Eq for Snapshot {}
+
+impl Ord for Snapshot {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.timestamp.cmp(&other.timestamp)
     }
 }
 

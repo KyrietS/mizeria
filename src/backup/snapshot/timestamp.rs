@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-#[derive(PartialEq, PartialOrd, Clone)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub struct Timestamp {
     inner: chrono::NaiveDateTime,
 }
@@ -12,7 +12,7 @@ impl Timestamp {
         }
     }
 
-    pub fn from(str: &str) -> Option<Self> {
+    pub fn parse_from(str: &str) -> Option<Self> {
         let inner = chrono::NaiveDateTime::parse_from_str(str, "%Y-%m-%d_%H.%M").ok()?;
         Some(Self { inner })
     }
@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn get_timestamp_from_string() {
-        let ts = Timestamp::from("2021-07-15_18.34").unwrap();
+        let ts = Timestamp::parse_from("2021-07-15_18.34").unwrap();
 
         assert_eq!(ts.inner.year(), 2021);
         assert_eq!(ts.inner.month(), 7);
@@ -61,8 +61,8 @@ mod tests {
 
     #[test]
     fn timestamp_from_invalid_string_returns_none() {
-        assert!(Timestamp::from("boo").is_none());
-        assert!(Timestamp::from(" \t  2021-07-15_18.34  \t\n").is_none());
-        assert!(Timestamp::from("2021-07-15 18:34").is_none());
+        assert!(Timestamp::parse_from("boo").is_none());
+        assert!(Timestamp::parse_from(" \t  2021-07-15_18.34  \t\n").is_none());
+        assert!(Timestamp::parse_from("2021-07-15 18:34").is_none());
     }
 }
