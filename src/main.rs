@@ -8,6 +8,9 @@ fn main() {
     let result_code = match run_program(&args[1..]) {
         Ok(_) => 0,
         Err(msg) => {
+            if let Some(source) = msg.source() {
+                error!("{}", source);
+            }
             error!("{}", msg);
             1
         }

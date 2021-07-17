@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 mod backup;
 
-pub fn run_program<C: IntoIterator>(args: C) -> Result<(), String>
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+pub fn run_program<C: IntoIterator>(args: C) -> Result<()>
 where
     C::Item: AsRef<OsStr>,
 {
@@ -21,7 +23,7 @@ where
     Ok(())
 }
 
-fn parse_args(args: &[String]) -> Result<(), String> {
+fn parse_args(args: &[String]) -> Result<()> {
     let matches = App::new("mizeria")
         .version(clap::crate_version!())
         .about("Simple backup software")
@@ -64,7 +66,7 @@ fn parse_args(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn handle_backup(args: &ArgMatches) -> Result<(), String> {
+fn handle_backup(args: &ArgMatches) -> Result<()> {
     let backup = args.value_of("BACKUP").unwrap();
     let files: Vec<PathBuf> = args
         .values_of("INPUT")

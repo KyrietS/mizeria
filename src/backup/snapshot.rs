@@ -4,10 +4,10 @@ mod timestamp;
 
 use files::Files;
 use index::Index;
-use log::{debug, error, trace, warn};
+use log::{debug, error, trace};
 use std::cmp::Ordering;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 use timestamp::Timestamp;
 use walkdir::WalkDir;
 
@@ -64,60 +64,59 @@ impl Snapshot {
         self.timestamp.to_string()
     }
 
-    pub fn index_files(&mut self, files: &[PathBuf]) -> Result<(), String> {
-        debug!("Started indexing files");
+    pub fn backup_files(&mut self, files: &[PathBuf]) -> io::Result<()> {
+        debug!("Started backup process");
 
         for path in files {
-            self.add_path_to_index(path)?;
+            self.backup_path_recursively(path);
         }
 
-        self.index.save().or(Err("Error while saving index.txt"))?;
-        debug!("Finished indexing files");
+        self.index.save()?;
+
+        debug!("Finished backup process");
         Ok(())
     }
 
-    fn add_path_to_index(&mut self, path: &Path) -> Result<(), String> {
-        if !path.exists() {
-            return Err(format!("Invalid path: {}", path.display()));
-        }
-
-        for entry in WalkDir::new(&path) {
+    fn backup_path_recursively(&mut self, path: &Path) {
+        for entry in WalkDir::new(path) {
             let entry = match entry {
-                Ok(e) => e,
+                Ok(entry) => entry,
                 Err(e) => {
-                    warn!("{}", e);
+                    error!("{}", e);
                     continue;
                 }
             };
-            let file_path = entry
-                .path()
-                .canonicalize()
-                .or(Err("Cannot resolve file path"))?;
-            trace!("Indexed: {}", file_path.display());
-            self.index.push(&self.timestamp, file_path);
+
+            self.copy_and_index_entry(entry.path());
         }
-        Ok(())
     }
 
-    pub fn copy_indexed_files(&self) -> Result<(), String> {
-        debug!("Started copying files");
-
-        let index_entries = self.index.entries.iter();
-        let entries_to_copy = index_entries.map(|e| e.path.as_path());
-        self.copy_all_entries(entries_to_copy);
-
-        debug!("Finished copying files");
-        Ok(())
-    }
-
-    fn copy_all_entries<I: IntoIterator>(&self, entries: I)
-    where
-        I::Item: AsRef<Path>,
-    {
-        for entry in entries {
-            if let Err(e) = self.files.copy_entry(entry.as_ref()) {
-                error!("File was not copied: {}", e);
+    fn copy_and_index_entry(&mut self, entry: &Path) {
+        let destination = self.files.copy_entry(entry);
+        match destination {
+            Ok(destination) => {
+                trace!(
+                    "Copied: \"{}\" -> \"{}\"",
+                    entry.display(),
+                    destination.display()
+                );
+                self.index_entry(entry);
             }
+            Err(e) => {
+                error!("Failed to copy: \"{}\" ({})", entry.display(), e);
+            }
+        }
+    }
+
+    fn index_entry(&mut self, entry: &Path) {
+        let absolute_path = entry.canonicalize();
+
+        match absolute_path {
+            Ok(absolute_path) => {
+                self.index.push(&self.timestamp, absolute_path.clone());
+                trace!("Indexed: {}", absolute_path.display());
+            }
+            Err(e) => error!("Failed to index: \"{}\" ({})", entry.display(), e),
         }
     }
 }
@@ -160,31 +159,14 @@ mod tests {
     }
 
     #[test]
-    fn index_invalid_path() {
+    fn backup_invalid_path() {
         let root = tempfile::tempdir().unwrap();
         let mut snapshot = Snapshot::create(root.path()).unwrap();
 
-        let result = snapshot.index_files(&[PathBuf::from("incorrect path")]);
-        assert!(result.is_err());
-    }
+        let result = snapshot.backup_files(&[PathBuf::from("incorrect path")]);
+        assert!(result.is_ok());
 
-    #[test]
-    fn index_empty_folder() {
-        let root = tempfile::tempdir().unwrap();
-        let files = tempfile::tempdir().unwrap();
-        let mut snapshot = Snapshot::create(root.path()).unwrap();
-
-        snapshot.index_files(&[files.path().to_owned()]).unwrap();
-
-        let index_content = fs::read_to_string(snapshot.location.join("index.txt")).unwrap();
-
-        assert_eq!(
-            index_content,
-            format!(
-                "{} {}\n",
-                snapshot.name(),
-                files.path().canonicalize().unwrap().display()
-            )
-        )
+        let index_content = fs::read_to_string(snapshot.index.location).unwrap();
+        assert!(index_content.is_empty());
     }
 }

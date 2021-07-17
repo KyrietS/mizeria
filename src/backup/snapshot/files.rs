@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::path::{Component, Components, Path, PathBuf, Prefix, PrefixComponent};
 use std::{fs, io};
 
-use log::{error, trace, warn};
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Files {
     root: PathBuf,
@@ -16,56 +16,31 @@ impl Files {
         Files { root: location }
     }
 
-    pub fn copy_entry(&self, entry: &Path) -> io::Result<()> {
+    pub fn copy_entry(&self, entry: &Path) -> Result<PathBuf> {
         let entry_meta = entry.symlink_metadata()?;
         let entry_type = entry_meta.file_type();
 
-        if entry_type.is_dir() {
-            self.copy_dir_entry(&entry);
+        return if entry_type.is_dir() {
+            self.copy_dir_entry(&entry)
         } else if entry_type.is_file() {
-            self.copy_file_entry(&entry);
+            self.copy_file_entry(&entry)
         } else if entry_type.is_symlink() {
-            warn!("Copying symlinks is not supported yet.");
+            Err("Copying symlinks is not supported yet.".into())
         } else {
-            warn!("Unknown entry type: {}", &entry.display());
-        }
-        Ok(())
+            Err(format!("Unknown entry type: {}", &entry.display()).into())
+        };
     }
 
-    fn copy_dir_entry(&self, dir_to_copy: &Path) {
-        if let Err(e) = self.try_copy_dir(dir_to_copy) {
-            error!("Cannot create directory: {}", dir_to_copy.display());
-            error!("{}", e);
-        }
-    }
-
-    fn try_copy_dir(&self, dir_to_copy: &Path) -> io::Result<()> {
+    fn copy_dir_entry(&self, dir_to_copy: &Path) -> Result<PathBuf> {
         let snapshot_entry = self.to_snapshot_path(&dir_to_copy)?;
         fs::create_dir_all(&snapshot_entry)?;
-        trace!(
-            "Createed dir: \"{}\" -> \"{}\"",
-            dir_to_copy.display(),
-            snapshot_entry.display()
-        );
-        Ok(())
+        Ok(snapshot_entry)
     }
 
-    fn copy_file_entry(&self, file_to_copy: &Path) {
-        if let Err(e) = self.try_copy_file(file_to_copy) {
-            error!("Cannot copy file: {}", file_to_copy.display());
-            error!("{}", e);
-        }
-    }
-
-    fn try_copy_file(&self, file_to_copy: &Path) -> io::Result<()> {
+    fn copy_file_entry(&self, file_to_copy: &Path) -> Result<PathBuf> {
         let snapshot_entry = self.to_snapshot_path(&file_to_copy)?;
         fs::copy(file_to_copy, &snapshot_entry)?;
-        trace!(
-            "Copied file: \"{}\" -> \"{}\"",
-            file_to_copy.display(),
-            snapshot_entry.display()
-        );
-        Ok(())
+        Ok(snapshot_entry)
     }
 
     fn to_snapshot_path(&self, entry: &Path) -> io::Result<PathBuf> {
