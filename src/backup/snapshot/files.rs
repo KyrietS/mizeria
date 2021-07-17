@@ -10,29 +10,25 @@ pub struct Files {
 
 impl Files {
     pub fn new(location: PathBuf) -> Files {
+        if !location.exists() {
+            fs::create_dir(&location).expect("Error creating files dir");
+        }
         Files { root: location }
     }
 
-    pub fn copy_all<I: IntoIterator>(&self, files: I) -> Result<(), String>
-    where
-        I::Item: AsRef<Path>,
-    {
-        if !self.root.exists() {
-            fs::create_dir(self.root.to_owned())
-                .or(Err("Cannot create folder for files to backup"))?;
-        }
+    pub fn copy_entry(&self, entry: &Path) -> io::Result<()> {
+        let entry_meta = entry.symlink_metadata()?;
+        let entry_type = entry_meta.file_type();
 
-        for entry in files {
-            let entry = entry.as_ref();
-            if entry.is_dir() {
-                self.copy_dir_entry(&entry);
-            } else if entry.is_file() {
-                self.copy_file_entry(&entry);
-            } else {
-                warn!("Entry inaccessible: {}", &entry.display());
-            }
+        if entry_type.is_dir() {
+            self.copy_dir_entry(&entry);
+        } else if entry_type.is_file() {
+            self.copy_file_entry(&entry);
+        } else if entry_type.is_symlink() {
+            warn!("Copying symlinks is not supported yet.");
+        } else {
+            warn!("Unknown entry type: {}", &entry.display());
         }
-
         Ok(())
     }
 
@@ -125,7 +121,7 @@ mod tests {
             root: PathBuf::new(),
         };
 
-        let result = files.copy_all(&[invalid_file]);
+        let result = files.copy_entry(&invalid_file);
         assert!(result.is_err());
     }
 

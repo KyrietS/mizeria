@@ -4,7 +4,7 @@ mod timestamp;
 
 use files::Files;
 use index::Index;
-use log::{debug, trace, warn};
+use log::{debug, error, trace, warn};
 use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -104,10 +104,21 @@ impl Snapshot {
 
         let index_entries = self.index.entries.iter();
         let entries_to_copy = index_entries.map(|e| e.path.as_path());
-        self.files.copy_all(entries_to_copy)?;
+        self.copy_all_entries(entries_to_copy);
 
         debug!("Finished copying files");
         Ok(())
+    }
+
+    fn copy_all_entries<I: IntoIterator>(&self, entries: I)
+    where
+        I::Item: AsRef<Path>,
+    {
+        for entry in entries {
+            if let Err(e) = self.files.copy_entry(entry.as_ref()) {
+                error!("File was not copied: {}", e);
+            }
+        }
     }
 }
 
