@@ -38,8 +38,8 @@ impl Backup {
         })
     }
 
-    pub fn latest_snapshot(&self) -> Option<Snapshot> {
-        self.snapshots.last()?.load()
+    fn latest_snapshot(&self) -> Option<&SnapshotPreview> {
+        self.snapshots.last()
     }
 
     pub fn add_snapshot(&mut self, files: &[PathBuf], incremental: bool) -> Result<()> {

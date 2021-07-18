@@ -3,7 +3,7 @@ mod index;
 mod timestamp;
 
 use files::Files;
-use index::Index;
+use index::{Index, IndexPreview};
 use log::{debug, error, trace, warn};
 use std::cmp::Ordering;
 use std::fmt::Debug;
@@ -13,7 +13,6 @@ use timestamp::Timestamp;
 use walkdir::WalkDir;
 
 pub struct Snapshot {
-    #[allow(dead_code)]
     location: PathBuf,
     timestamp: Timestamp,
     index: Index,
@@ -50,6 +49,7 @@ impl Snapshot {
         })
     }
 
+    #[allow(dead_code)]
     pub fn open(location: &Path) -> Result<Snapshot, String> {
         let snapshot_name = location
             .file_name()
@@ -76,12 +76,28 @@ impl Snapshot {
         SnapshotPreview::new(self.location.as_path()).unwrap()
     }
 
-    pub fn set_base_snapshot(&mut self, other: Option<Snapshot>) {
-        debug!("Base snapshot set to: {:?}", other);
-        match other {
-            Some(snapshot) => self.config.base_index = Some(snapshot.index),
-            None => self.config.base_index = None,
-        }
+    pub fn set_base_snapshot(&mut self, base_snapshot: Option<&SnapshotPreview>) {
+        let base_index = match base_snapshot {
+            Some(snapshot) => {
+                let index_preview = IndexPreview::open(snapshot.index.as_path());
+                match index_preview {
+                    Ok(index_preview) => Some(index_preview),
+                    Err(e) => {
+                        warn!("Failed to load base index with cause: {}", e);
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+
+        let base_snapshot_str = match base_index {
+            Some(_) => base_snapshot.unwrap().timestamp.to_string(),
+            None => String::from("None"),
+        };
+        debug!("Base snapshot set to: {}", base_snapshot_str);
+
+        self.config.base_index = base_index;
     }
 
     pub fn name(&self) -> String {
@@ -139,7 +155,7 @@ impl Snapshot {
         if file_has_changed {
             None
         } else {
-            Some(prev_timestamp)
+            Some(prev_timestamp.clone())
         }
     }
 
@@ -196,7 +212,7 @@ impl Debug for Snapshot {
 }
 
 struct SnapshotConfig {
-    base_index: Option<Index>,
+    base_index: Option<IndexPreview>,
 }
 
 impl<'a> SnapshotConfig {
@@ -205,11 +221,8 @@ impl<'a> SnapshotConfig {
     }
 }
 
-#[derive(Debug)]
 pub struct SnapshotPreview {
-    location: PathBuf,
     timestamp: Timestamp,
-    #[allow(dead_code)] // will be used in the future
     index: PathBuf,
     #[allow(dead_code)] // will be used in the future
     files: PathBuf,
@@ -225,26 +238,10 @@ impl SnapshotPreview {
         files.exists().then(|| ())?;
 
         Some(SnapshotPreview {
-            location: location.to_owned(),
             timestamp,
             index,
             files,
         })
-    }
-
-    pub fn load(&self) -> Option<Snapshot> {
-        debug!("Loading snapshot: {}", self.timestamp);
-        let result = Snapshot::open(self.location.as_path());
-        match result {
-            Ok(snapshot) => Some(snapshot),
-            Err(e) => {
-                warn!(
-                    "Failed to load snapshot: {} with cause: {}",
-                    self.timestamp, e
-                );
-                None
-            }
-        }
     }
 }
 

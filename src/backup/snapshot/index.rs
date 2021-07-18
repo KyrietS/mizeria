@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -49,12 +50,6 @@ impl Index {
         file.flush()?;
         Ok(())
     }
-
-    pub fn find(&self, entry: &Path) -> Option<Timestamp> {
-        let absolute_entry = entry.canonicalize().ok()?;
-        let result = self.entries.iter().find(|e| e.path == absolute_entry)?;
-        Some(result.timestamp.clone())
-    }
 }
 
 #[derive(Clone)]
@@ -77,6 +72,32 @@ impl IndexEntry {
 impl ToString for IndexEntry {
     fn to_string(&self) -> String {
         format!("{} {}", self.timestamp, self.path.display())
+    }
+}
+
+pub struct IndexPreview {
+    inner: HashMap<PathBuf, Timestamp, ahash::RandomState>,
+}
+
+impl IndexPreview {
+    pub fn open(path: &Path) -> Result<Self, String> {
+        let file = File::open(&path).or(Err("Cannot open index.txt"))?;
+        let file = BufReader::new(&file);
+        let mut entries = HashMap::default();
+        for line in file.lines() {
+            let line = line.or(Err("Error while reading index.txt"))?;
+            let (timestamp_slice, path_slice) = line
+                .split_once(' ')
+                .ok_or("Index line has invalid format")?;
+            let timestamp = Timestamp::parse_from(timestamp_slice).ok_or("Invalid timestamp")?;
+            entries.insert(PathBuf::from(path_slice), timestamp);
+        }
+        Ok(Self { inner: entries })
+    }
+
+    pub fn find(&self, entry: &Path) -> Option<&Timestamp> {
+        let absolute_entry = entry.canonicalize().ok()?;
+        self.inner.get(&absolute_entry)
     }
 }
 
