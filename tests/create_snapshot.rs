@@ -3,27 +3,35 @@ use std::borrow::Borrow;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use tempfile::TempDir;
 use walkdir::WalkDir;
 
-pub fn create_snapshot(backup: &TempDir, files: &[&Path]) {
-    let mut args = vec![
-        String::from("backup"),
-        backup.path().to_string_lossy().to_string(),
-    ];
-
-    for file in files {
-        args.push(file.to_string_lossy().to_string());
-    }
-
-    mizeria::run_program(args).expect("program failed");
+fn create_snapshot(backup: &Path, files: &[&Path]) {
+    create_snapshot_with_args(backup, files, &[]);
 }
 
-pub fn generate_snapshot_name() -> String {
-    use chrono::{Datelike, Timelike};
+fn create_snapshot_with_args(backup: &Path, files: &[&Path], args: &[&str]) {
+    let mut program_args = vec![String::from("backup"), backup.to_string_lossy().to_string()];
+
+    for arg in args {
+        program_args.push(arg.to_string());
+    }
+
+    for file in files {
+        program_args.push(file.to_string_lossy().to_string());
+    }
+
+    mizeria::run_program(program_args).expect("program failed");
+}
+
+fn generate_snapshot_name() -> String {
     let local = chrono::offset::Local::now();
-    let date = local.date();
-    let time = local.time();
+    format_snapshot_name(local)
+}
+
+fn format_snapshot_name(datetime: chrono::DateTime<chrono::Local>) -> String {
+    use chrono::{Datelike, Timelike};
+    let date = datetime.date();
+    let time = datetime.time();
     format!(
         "{}-{:02}-{:02}_{:02}.{:02}",
         date.year(),
@@ -34,7 +42,7 @@ pub fn generate_snapshot_name() -> String {
     )
 }
 
-pub fn get_entry_from(folder: &Path) -> PathBuf {
+fn get_entry_from(folder: &Path) -> PathBuf {
     folder.read_dir().unwrap().next().unwrap().unwrap().path()
 }
 
@@ -56,6 +64,12 @@ impl StubSnapshot {
             index,
             files,
         }
+    }
+
+    fn index_contains(&self, timestamp: &str, path: &Path) -> bool {
+        let entry = format!("{} {}", timestamp, path.to_string_lossy());
+        let lines: Vec<&str> = self.index.lines().collect();
+        lines.contains(&entry.as_str())
     }
 }
 
@@ -80,26 +94,26 @@ fn assert_snapshot_exists(snapshot: &Path) {
     assert!(snapshot_index.is_file());
 }
 
-fn get_dir_by_name(path: &Path, dir_name: &str) -> PathBuf {
+fn get_dir_by_name(path: &Path, dir_name: &str) -> Option<PathBuf> {
     for entry in WalkDir::new(path) {
         let entry = entry.unwrap().into_path();
         let entry_name = entry.file_name().unwrap().to_string_lossy().to_string();
         if entry.is_dir() && entry_name == dir_name {
-            return entry;
+            return Some(entry);
         }
     }
-    panic!("Dir cannot be found under specified path");
+    return None;
 }
 
-fn get_file_by_name(path: &Path, file_name: &str) -> PathBuf {
+fn get_file_by_name(path: &Path, file_name: &str) -> Option<PathBuf> {
     for entry in WalkDir::new(path) {
         let entry = entry.unwrap().into_path();
         let entry_name = entry.file_name().unwrap().to_string_lossy();
         if entry.is_file() && entry_name == file_name {
-            return entry;
+            return Some(entry);
         }
     }
-    panic!("File cannot be found under specified path");
+    return None;
 }
 
 #[test]
@@ -109,7 +123,7 @@ fn create_snapshot_with_empty_folder() {
     let files = files.path().join("dummy_dir");
     fs::create_dir(&files).unwrap();
 
-    create_snapshot(&backup, &[files.as_path()]);
+    create_snapshot(backup.path(), &[files.as_path()]);
 
     // backup should have one entry (snapshot)
     assert_eq!(
@@ -122,7 +136,7 @@ fn create_snapshot_with_empty_folder() {
     let snapshot = StubSnapshot::open(snapshot.as_path());
     // assert_snapshot_exists(snapshot.as_path());
 
-    let dummy_dir = get_dir_by_name(snapshot.files.as_path(), "dummy_dir");
+    let dummy_dir = get_dir_by_name(snapshot.files.as_path(), "dummy_dir").unwrap();
     assert_eq!(0, dummy_dir.read_dir().unwrap().count()); // empty dir
 
     // snapshot should have index.txt with one record
@@ -150,7 +164,7 @@ fn create_snapshot_with_one_file() {
 
     // run program
     let snapshot_name = generate_snapshot_name();
-    create_snapshot(&backup, &[files.path()]);
+    create_snapshot(backup.path(), &[files.path()]);
 
     // snapshot
     let snapshot = get_entry_from(backup.path());
@@ -158,7 +172,7 @@ fn create_snapshot_with_one_file() {
     let snapshot_index_content = fs::read_to_string(&snapshot_index).unwrap();
 
     let snapshot_files = snapshot.join("files");
-    let snapshot_dummy_file = get_file_by_name(snapshot_files.as_path(), "dummy_file.txt");
+    let snapshot_dummy_file = get_file_by_name(snapshot_files.as_path(), "dummy_file.txt").unwrap();
     let snapshot_dummy_file_content = fs::read_to_string(&snapshot_dummy_file).unwrap();
 
     assert!(snapshot_dummy_file.is_file());
@@ -179,9 +193,9 @@ fn create_three_snapshots_one_after_another() {
     let backup = tempfile::tempdir().unwrap();
     let files = tempfile::tempdir().unwrap();
 
-    create_snapshot(&backup, &[files.path()]);
-    create_snapshot(&backup, &[files.path()]);
-    create_snapshot(&backup, &[files.path()]);
+    create_snapshot(backup.path(), &[files.path()]);
+    create_snapshot(backup.path(), &[files.path()]);
+    create_snapshot(backup.path(), &[files.path()]);
 
     let backup = backup.path().read_dir().unwrap();
     let snapshots: Vec<fs::DirEntry> = backup.filter_map(Result::ok).collect();
@@ -204,7 +218,7 @@ fn create_snapshot_from_two_paths() {
         .write_all(b"hello world")
         .unwrap();
 
-    create_snapshot(&backup, &[path_1.path(), path_2.path()]);
+    create_snapshot(backup.path(), &[path_1.path(), path_2.path()]);
 
     let snapshot = get_entry_from(backup.path());
     let snapshot = StubSnapshot::open(snapshot.as_path());
@@ -212,15 +226,17 @@ fn create_snapshot_from_two_paths() {
     let snapshot_path_1 = get_dir_by_name(
         snapshot.files.as_path(),
         path_1.path().file_name().unwrap().to_str().unwrap(),
-    );
+    )
+    .unwrap();
     let snapshot_path_2 = get_dir_by_name(
         snapshot.files.as_path(),
         path_2.path().file_name().unwrap().to_str().unwrap(),
-    );
+    )
+    .unwrap();
     assert_eq!(0, snapshot_path_1.read_dir().unwrap().count());
     assert_eq!(1, snapshot_path_2.read_dir().unwrap().count());
 
-    let snapshot_dummy_file = get_file_by_name(snapshot.files.as_path(), "dummy_file.txt");
+    let snapshot_dummy_file = get_file_by_name(snapshot.files.as_path(), "dummy_file.txt").unwrap();
     assert_eq!(
         "hello world",
         fs::read_to_string(snapshot_dummy_file).unwrap()
@@ -235,9 +251,159 @@ fn create_snapshot_from_two_paths() {
     );
 
     assert_eq!(3, snapshot.index.lines().count());
-    assert_eq!(
-        snapshot.index.lines().count(),
-        expected_index_content.lines().count()
-    );
     assert_eq!(snapshot.index, expected_index_content);
+}
+
+#[test]
+fn create_incremental_snapshot() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let files = tempfile::tempdir().unwrap();
+    let files = files.path();
+    let old_file = files.join("old_file.txt");
+    let mod_file = files.join("mod_file.txt");
+    let new_file = files.join("new_file.txt");
+
+    File::create(&old_file).unwrap();
+    File::create(&mod_file).unwrap();
+    File::create(&new_file).unwrap();
+
+    // Snapshot from the future. The idea is to pretend that the previous
+    // snapshot has a newer version of a file compared to modification
+    // time in the filestystem. Program will read this as the latest snapshot
+    // and it will create incremental backup based on this.
+    let future_datetime = chrono::offset::Local::now() + chrono::Duration::hours(1);
+    let previous_snapshot_timestamp = format_snapshot_name(future_datetime);
+    let previous_snapshot_path = backup.join(&previous_snapshot_timestamp);
+    fs::create_dir(&previous_snapshot_path).unwrap();
+    fs::create_dir(previous_snapshot_path.join("files")).unwrap();
+    let latest_index = File::create(previous_snapshot_path.join("index.txt")).unwrap();
+    write!(
+        &latest_index,
+        "{future_ts} {}\n{future_ts} {}\n{past_ts} {}\n",
+        files.canonicalize().unwrap().display(),
+        old_file.canonicalize().unwrap().display(),
+        mod_file.canonicalize().unwrap().display(),
+        future_ts = previous_snapshot_timestamp,
+        past_ts = generate_snapshot_name()
+    )
+    .unwrap();
+
+    let snapshot_name = generate_snapshot_name();
+    create_snapshot(backup, &[files]);
+    let snapshot = StubSnapshot::open(backup.join(snapshot_name).as_path());
+
+    let old_file_in_snapshot = get_file_by_name(snapshot.files.as_path(), "old_file.txt");
+    let new_file_in_snapshot = get_file_by_name(snapshot.files.as_path(), "new_file.txt");
+
+    assert!(old_file_in_snapshot.is_none()); // old_file.txt is not copied
+    assert!(new_file_in_snapshot.is_some()); // new_file.txt is copied
+
+    assert_eq!(4, snapshot.index.lines().count());
+
+    assert!(snapshot.index_contains(
+        previous_snapshot_timestamp.as_str(),
+        files.canonicalize().unwrap().as_path()
+    ));
+    assert!(snapshot.index_contains(
+        snapshot.timestamp.as_str(),
+        mod_file.canonicalize().unwrap().as_path()
+    ));
+    assert!(snapshot.index_contains(
+        snapshot.timestamp.as_str(),
+        new_file.canonicalize().unwrap().as_path()
+    ));
+    assert!(snapshot.index_contains(
+        previous_snapshot_timestamp.as_str(),
+        old_file.canonicalize().unwrap().as_path()
+    ));
+}
+
+#[test]
+fn incremental_snapshot_with_no_changes() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let files = tempfile::tempdir().unwrap();
+    let files = files.path();
+    let old_file = files.join("old_file.txt");
+
+    File::create(&old_file).unwrap();
+
+    let future_datetime = chrono::offset::Local::now() + chrono::Duration::hours(1);
+    let previous_snapshot_timestamp = format_snapshot_name(future_datetime);
+    let previous_snapshot_path = backup.join(&previous_snapshot_timestamp);
+    fs::create_dir(&previous_snapshot_path).unwrap();
+    fs::create_dir(previous_snapshot_path.join("files")).unwrap();
+    let latest_index = File::create(previous_snapshot_path.join("index.txt")).unwrap();
+    write!(
+        &latest_index,
+        "{future_ts} {}\n{future_ts} {}\n{past_ts} {}\n",
+        files.canonicalize().unwrap().display(),
+        old_file.canonicalize().unwrap().display(),
+        future_ts = previous_snapshot_timestamp,
+        past_ts = generate_snapshot_name()
+    )
+    .unwrap();
+
+    let snapshot_name = generate_snapshot_name();
+    create_snapshot(backup, &[files]);
+    let snapshot = StubSnapshot::open(backup.join(snapshot_name).as_path());
+
+    // files folder is empty (no files were copied)
+    assert_eq!(0, snapshot.files.read_dir().unwrap().count());
+
+    // two entries were indexed
+    assert_eq!(2, snapshot.index.lines().count());
+    assert!(snapshot.index_contains(
+        previous_snapshot_timestamp.as_str(),
+        files.canonicalize().unwrap().as_path()
+    ));
+    assert!(snapshot.index_contains(
+        previous_snapshot_timestamp.as_str(),
+        old_file.canonicalize().unwrap().as_path()
+    ));
+}
+
+#[test]
+fn force_full_snapshot() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let files = tempfile::tempdir().unwrap();
+    let files = files.path();
+    let old_file = files.join("old_file.txt");
+
+    File::create(&old_file).unwrap();
+
+    let future_datetime = chrono::offset::Local::now() + chrono::Duration::hours(1);
+    let previous_snapshot_timestamp = format_snapshot_name(future_datetime);
+    let previous_snapshot_path = backup.join(&previous_snapshot_timestamp);
+    fs::create_dir(&previous_snapshot_path).unwrap();
+    fs::create_dir(previous_snapshot_path.join("files")).unwrap();
+    let latest_index = File::create(previous_snapshot_path.join("index.txt")).unwrap();
+    write!(
+        &latest_index,
+        "{future_ts} {}\n{future_ts} {}\n{past_ts} {}\n",
+        files.canonicalize().unwrap().display(),
+        old_file.canonicalize().unwrap().display(),
+        future_ts = previous_snapshot_timestamp,
+        past_ts = generate_snapshot_name()
+    )
+    .unwrap();
+
+    let new_snapshot_timestamp = generate_snapshot_name();
+    create_snapshot_with_args(backup, &[files], &["--full"]);
+    let snapshot = StubSnapshot::open(backup.join(&new_snapshot_timestamp).as_path());
+
+    assert!(get_file_by_name(snapshot.files.as_path(), "old_file.txt").is_some());
+
+    // two entries were indexed
+    assert_eq!(2, snapshot.index.lines().count());
+    assert!(snapshot.index_contains(
+        new_snapshot_timestamp.as_str(),
+        files.canonicalize().unwrap().as_path()
+    ));
+    assert!(snapshot.index_contains(
+        new_snapshot_timestamp.as_str(),
+        old_file.canonicalize().unwrap().as_path()
+    ));
 }

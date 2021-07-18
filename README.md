@@ -11,7 +11,37 @@ Mizeria is a simple program for making backups. It is written in Rust and it sup
 ## Basic usage
 Create a snapshot of your files:
 ```
-./mizeria <path_to_backup_folder> <path_to_my_files>
+mizeria backup <BACKUP> <INPUT>...
+```
+
+## Help
+
+```
+USAGE:
+    mizeria backup [FLAGS] <BACKUP> <INPUT>...
+
+FLAGS:
+        --full       Force creating full snapshot
+    -h, --help       Prints help information
+    -v               Sets the level of verbosity
+
+ARGS:
+    <BACKUP>      A folder where snapshot will be stored
+    <INPUT>...    Files or folders to be backed up
+```
+
+General help about the program:
+```
+mizeria --help
+```
+
+backup sumcommand help:
+```
+mizeria help backup
+```
+more detailed help about backup subcommand:
+```
+mizeria backup --help
 ```
 
 ## Key features
@@ -19,11 +49,11 @@ Create a snapshot of your files:
 * Single executable file.
 * Extremely fast.
 * Backed up files and folders are stored as files and folders.
+* Incremental backups. 🚀
 
 ## Planned features
 
-* Incremental backups.
-* Merging and removing snapshots.
+* Merging and removing snapshots. 🚧
 * Backup restoration procedures.
 * Compressing snapshots into zips.
 * Repairing corrupted snapshots.

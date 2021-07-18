@@ -3,7 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use snapshot::Snapshot;
+use log::debug;
+use snapshot::{Snapshot, SnapshotPreview};
 
 mod snapshot;
 
@@ -11,18 +12,19 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Backup {
     location: PathBuf,
-    snapshots: Vec<Snapshot>,
+    snapshots: Vec<SnapshotPreview>,
 }
 
 impl Backup {
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path) -> Result<Backup> {
         let backup_root = path
             .read_dir()
             .or(Err("Folder with backup doesn't exist or isn't accessible"))?;
 
         let mut snapshots = vec![];
         for entry in backup_root.filter_map(std::result::Result::ok) {
-            let snapshot = Snapshot::open(entry.path().borrow());
+            let snapshot = Snapshot::open_preview(entry.path().borrow());
+
             match snapshot {
                 Some(snapshot) => snapshots.push(snapshot),
                 None => continue,
@@ -36,17 +38,25 @@ impl Backup {
         })
     }
 
-    #[allow(dead_code)]
-    pub fn latest_snapshot(&self) -> Option<&Snapshot> {
-        self.snapshots.last()
+    pub fn latest_snapshot(&self) -> Option<Snapshot> {
+        self.snapshots.last()?.load()
     }
 
-    pub fn add_snapshot(&mut self, files: &[PathBuf]) -> Result<()> {
-        let mut snapshot = Snapshot::create(self.location.as_path())?;
-        snapshot.backup_files(files)?;
+    pub fn add_snapshot(&mut self, files: &[PathBuf], incremental: bool) -> Result<()> {
+        let mut new_snapshot = Snapshot::create(self.location.as_path())?;
 
-        println!("Created snapshot: {}", snapshot.name());
-        self.snapshots.push(snapshot);
+        if incremental {
+            debug!("Incremental snapshot will be performed");
+            let latest_snapshot = self.latest_snapshot();
+            new_snapshot.set_base_snapshot(latest_snapshot);
+        } else {
+            debug!("Full snapshot will be performed");
+        }
+
+        new_snapshot.backup_files(files)?;
+
+        println!("Created snapshot: {}", new_snapshot.name());
+        self.snapshots.push(new_snapshot.as_preview());
 
         Ok(())
     }

@@ -39,6 +39,10 @@ impl Files {
 
     fn copy_file_entry(&self, file_to_copy: &Path) -> Result<PathBuf> {
         let snapshot_entry = self.to_snapshot_path(&file_to_copy)?;
+        let snapshot_entry_parent = snapshot_entry.parent().unwrap();
+        if !snapshot_entry_parent.exists() {
+            fs::create_dir_all(snapshot_entry_parent)?;
+        }
         fs::copy(file_to_copy, &snapshot_entry)?;
         Ok(snapshot_entry)
     }

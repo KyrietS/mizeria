@@ -1,6 +1,8 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Sub, time::SystemTime};
 
-#[derive(PartialEq, PartialOrd, Eq, Ord, Clone)]
+use log::warn;
+
+#[derive(PartialEq, PartialOrd, Eq, Ord, Clone, Debug)]
 pub struct Timestamp {
     inner: chrono::NaiveDateTime,
 }
@@ -13,14 +15,39 @@ impl Timestamp {
     }
 
     pub fn parse_from(str: &str) -> Option<Self> {
-        let inner = chrono::NaiveDateTime::parse_from_str(str, "%Y-%m-%d_%H.%M").ok()?;
-        Some(Self { inner })
+        let inner = chrono::NaiveDateTime::parse_from_str(str, "%Y-%m-%d_%H.%M");
+        match inner {
+            Ok(inner) => Some(Self { inner }),
+            Err(e) => {
+                warn!("Filed to parse \"{}\" as Timestamp\n{}", str, e);
+                None
+            }
+        }
     }
 
     pub fn get_next(&self) -> Self {
         let next_date_time = self.inner + chrono::Duration::minutes(1);
         Self {
             inner: next_date_time,
+        }
+    }
+}
+
+impl Sub<chrono::Duration> for Timestamp {
+    type Output = Timestamp;
+
+    fn sub(self, rhs: chrono::Duration) -> Self::Output {
+        Self {
+            inner: self.inner - rhs,
+        }
+    }
+}
+
+impl From<SystemTime> for Timestamp {
+    fn from(system_time: SystemTime) -> Self {
+        let local: chrono::DateTime<chrono::Local> = system_time.into();
+        Self {
+            inner: local.naive_local(),
         }
     }
 }

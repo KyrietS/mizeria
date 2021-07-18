@@ -1,10 +1,11 @@
 use std::borrow::Borrow;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::timestamp::Timestamp;
 
+#[derive(Clone)]
 pub struct Index {
     pub location: PathBuf,
     pub entries: Vec<IndexEntry>,
@@ -34,11 +35,8 @@ impl Index {
         Ok(index)
     }
 
-    pub fn push(&mut self, timestamp: &Timestamp, path: PathBuf) {
-        self.entries.push(IndexEntry {
-            timestamp: timestamp.to_owned(),
-            path,
-        });
+    pub fn push(&mut self, timestamp: Timestamp, path: PathBuf) {
+        self.entries.push(IndexEntry { timestamp, path });
     }
 
     pub fn save(&self) -> io::Result<()> {
@@ -51,8 +49,15 @@ impl Index {
         file.flush()?;
         Ok(())
     }
+
+    pub fn find(&self, entry: &Path) -> Option<Timestamp> {
+        let absolute_entry = entry.canonicalize().ok()?;
+        let result = self.entries.iter().find(|e| e.path == absolute_entry)?;
+        Some(result.timestamp.clone())
+    }
 }
 
+#[derive(Clone)]
 pub struct IndexEntry {
     pub timestamp: Timestamp,
     pub path: PathBuf,

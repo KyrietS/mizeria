@@ -44,6 +44,18 @@ fn parse_args(args: &[String]) -> Result<()> {
                     .index(2),
             )
             .arg(
+                Arg::with_name("full")
+                    .long("full")
+                    .help("Force creating full snapshot")
+                    .long_help(concat!(
+                        "Every snapshot is incremental by default and is based on the latest\n",
+                        "snapshot that can be found in the backup root. Using this option you\n",
+                        "can force the program to create full snapshot of your files. It means\n",
+                        "that all files will be copied into the snapshot even if they are already\n",
+                        "present in other snapshots."
+                    ))
+            )
+            .arg(
                 Arg::with_name("v")
                     .short("v")
                     .multiple(true)
@@ -82,8 +94,10 @@ fn handle_backup(args: &ArgMatches) -> Result<()> {
 
     init_logger(log_level);
 
+    let incremental_snapshot = !args.is_present("full");
     let mut backup = Backup::open(Path::new(backup))?;
-    backup.add_snapshot(files.as_slice())?;
+
+    backup.add_snapshot(files.as_slice(), incremental_snapshot)?;
     Ok(())
 }
 
