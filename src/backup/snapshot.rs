@@ -141,10 +141,14 @@ impl Snapshot {
         let prev_timestamp = self.config.base_index.as_ref()?.find(entry)?;
         let prev_timestamp_with_margin = prev_timestamp.clone() - margin;
 
-        let system_time = entry.symlink_metadata().ok()?.modified().ok()?;
-        let modif_timestamp = Timestamp::from(system_time);
+        let metadata = entry.symlink_metadata().ok()?;
+        let modif_system_time = metadata.modified().ok()?;
+        let create_system_time = metadata.created().ok()?;
+        let modif_timestamp = Timestamp::from(modif_system_time);
+        let create_timestamp = Timestamp::from(create_system_time);
 
-        let file_has_changed = modif_timestamp > prev_timestamp_with_margin;
+        let file_has_changed = modif_timestamp > prev_timestamp_with_margin
+            || create_timestamp > prev_timestamp_with_margin;
         trace!(
             "Entry \"{}\" (modif: {}) found in snapshot: {}, has_changed={}",
             entry.display(),
