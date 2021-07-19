@@ -407,3 +407,78 @@ fn force_full_snapshot() {
         old_file.canonicalize().unwrap().as_path()
     ));
 }
+
+#[test]
+#[cfg_attr(windows, ignore = "symlinks are not supported on windows")]
+fn create_snapshot_with_symlinks() {
+    // some dummy targets for the links
+    let target_dir = tempfile::tempdir().unwrap();
+    let target_dir = target_dir.path();
+    let target_file = target_dir.join("dummy_file.txt");
+    File::create(&target_file).unwrap();
+
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+
+    let files = tempfile::tempdir().unwrap();
+    let files = files.path();
+    let dir_link = files.join("dir_link");
+    let file_link = files.join("file_link.txt");
+
+    // create symlinks
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&target_dir, &dir_link).unwrap();
+        std::os::unix::fs::symlink(&target_file, &file_link).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        // creating symlinks on windows requires admin privileges
+        std::os::windows::fs::symlink_dir(&target_dir, &dir_link).unwrap();
+        std::os::windows::fs::symlink_file(&target_file, &file_link).unwrap();
+    }
+
+    create_snapshot(backup, &[files]);
+
+    let snapshot = get_entry_from(backup);
+    let snapshot = StubSnapshot::open(snapshot.as_path());
+
+    // Assert index.txt
+    assert_eq!(3, snapshot.index.lines().count());
+    assert!(snapshot.index_contains(
+        snapshot.timestamp.as_str(),
+        files.canonicalize().unwrap().as_path()
+    ));
+    assert!(snapshot.index_contains(
+        snapshot.timestamp.as_str(),
+        dir_link.canonicalize().unwrap().as_path()
+    ));
+    assert!(snapshot.index_contains(
+        snapshot.timestamp.as_str(),
+        file_link.canonicalize().unwrap().as_path()
+    ));
+
+    // Assert copied files (symlinks)
+    fn get_link_by_name(path: &Path, file_name: &str) -> Option<PathBuf> {
+        for entry in WalkDir::new(path) {
+            let entry = entry.unwrap().into_path();
+            let entry_name = entry.file_name().unwrap().to_string_lossy();
+            let entry_metadata = entry.symlink_metadata().unwrap();
+            if entry_metadata.file_type().is_symlink() && entry_name == file_name {
+                return Some(entry);
+            }
+        }
+        return None;
+    }
+
+    // links were successfully copied into 'files'
+    let snapshot_dir_link = get_link_by_name(snapshot.files.as_path(), "dir_link").unwrap();
+    let snapshot_file_link = get_link_by_name(snapshot.files.as_path(), "file_link.txt").unwrap();
+
+    let snapshot_dir_link_target = snapshot_dir_link.read_link().unwrap();
+    let snapshot_file_link_target = snapshot_file_link.read_link().unwrap();
+
+    // links point to the same values as original links
+    assert_eq!(snapshot_dir_link_target, target_dir);
+    assert_eq!(snapshot_file_link_target, target_file);
+}

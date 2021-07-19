@@ -25,7 +25,14 @@ impl Files {
         } else if entry_type.is_file() {
             self.copy_file_entry(&entry)
         } else if entry_type.is_symlink() {
-            Err("Copying symlinks is not supported yet.".into())
+            #[cfg(windows)]
+            {
+                Err("Copying symlinks is not supported on Windows.".into())
+            }
+            #[cfg(unix)]
+            {
+                self.copy_link_entry(entry)
+            }
         } else {
             Err(format!("Unknown entry type: {}", &entry.display()).into())
         };
@@ -39,11 +46,26 @@ impl Files {
 
     fn copy_file_entry(&self, file_to_copy: &Path) -> Result<PathBuf> {
         let snapshot_entry = self.to_snapshot_path(&file_to_copy)?;
-        let snapshot_entry_parent = snapshot_entry.parent().unwrap();
+        let snapshot_entry_parent = snapshot_entry.parent().ok_or("no parent")?;
         if !snapshot_entry_parent.exists() {
             fs::create_dir_all(snapshot_entry_parent)?;
         }
         fs::copy(file_to_copy, &snapshot_entry)?;
+        Ok(snapshot_entry)
+    }
+
+    #[cfg(unix)]
+    fn copy_link_entry(&self, link_to_copy: &Path) -> Result<PathBuf> {
+        let link_parent = link_to_copy.parent().ok_or("no parent")?;
+        let link_file_name = link_to_copy.file_name().ok_or("invalid file name")?;
+
+        let snapshot_entry_parent = self.to_snapshot_path(link_parent)?;
+        let snapshot_entry = snapshot_entry_parent.join(link_file_name);
+        if !snapshot_entry_parent.exists() {
+            fs::create_dir_all(snapshot_entry_parent)?;
+        }
+        let source = link_to_copy.read_link()?;
+        std::os::unix::fs::symlink(source, &snapshot_entry)?;
         Ok(snapshot_entry)
     }
 

@@ -118,7 +118,7 @@ impl Snapshot {
     }
 
     fn backup_path_recursively(&mut self, path: &Path) {
-        for entry in WalkDir::new(path) {
+        for entry in WalkDir::new(path).follow_links(false) {
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(e) => {
