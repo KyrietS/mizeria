@@ -76,6 +76,10 @@ impl Snapshot {
         SnapshotPreview::new(self.location.as_path()).unwrap()
     }
 
+    pub fn has_valid_name<T: AsRef<str>>(name: T) -> bool {
+        Timestamp::is_valid(name.as_ref())
+    }
+
     pub fn set_base_snapshot(&mut self, base_snapshot: Option<&SnapshotPreview>) {
         let base_index = match base_snapshot {
             Some(snapshot) => {

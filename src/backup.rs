@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use log::debug;
+use log::{debug, warn};
 use snapshot::{Snapshot, SnapshotPreview};
 
 mod snapshot;
@@ -23,11 +23,19 @@ impl Backup {
 
         let mut snapshots = vec![];
         for entry in backup_root.filter_map(std::result::Result::ok) {
-            let snapshot = Snapshot::open_preview(entry.path().borrow());
+            let entry_file_name = entry.file_name().to_string_lossy().as_ref().to_owned();
 
-            match snapshot {
-                Some(snapshot) => snapshots.push(snapshot),
-                None => continue,
+            if Snapshot::has_valid_name(&entry_file_name) {
+                let snapshot = Snapshot::open_preview(entry.path().borrow());
+                match snapshot {
+                    Some(snapshot) => snapshots.push(snapshot),
+                    None => warn!("Failed to load snapshot: {}", entry_file_name),
+                }
+            } else {
+                warn!(
+                    "Found unrecognized entry in backup folder: {}",
+                    entry_file_name
+                );
             }
         }
         snapshots.sort_unstable();

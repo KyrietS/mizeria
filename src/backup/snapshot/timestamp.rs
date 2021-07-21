@@ -19,10 +19,14 @@ impl Timestamp {
         match inner {
             Ok(inner) => Some(Self { inner }),
             Err(e) => {
-                warn!("Filed to parse \"{}\" as Timestamp\n{}", str, e);
+                warn!("Filed to parse \"{}\" as Timestamp: {}", str, e);
                 None
             }
         }
+    }
+
+    pub fn is_valid(str: &str) -> bool {
+        chrono::NaiveDateTime::parse_from_str(str, "%Y-%m-%d_%H.%M").is_ok()
     }
 
     pub fn get_next(&self) -> Self {
