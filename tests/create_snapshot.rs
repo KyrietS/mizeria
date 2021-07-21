@@ -1,9 +1,14 @@
 use regex::Regex;
 use std::borrow::Borrow;
-use std::fs::{self, File};
+use std::fs::{self, create_dir, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+fn init_logger() {
+    let mut builder = env_logger::Builder::new();
+    builder.target(env_logger::Target::Stdout).try_init().ok();
+}
 
 fn create_snapshot(backup: &Path, files: &[&Path]) {
     create_snapshot_with_args(backup, files, &[]);
@@ -19,7 +24,7 @@ fn create_snapshot_with_args(backup: &Path, files: &[&Path], args: &[&str]) {
     for file in files {
         program_args.push(file.to_string_lossy().to_string());
     }
-
+    init_logger();
     mizeria::run_program(program_args).expect("program failed");
 }
 
@@ -70,6 +75,18 @@ impl StubSnapshot {
         let entry = format!("{} {}", timestamp, path.to_string_lossy());
         let lines: Vec<&str> = self.index.lines().collect();
         lines.contains(&entry.as_str())
+    }
+
+    fn index_contains_all(&self, timestamp: &str, paths: &[&Path]) -> bool {
+        paths.iter().all(|p| self.index_contains(timestamp, p))
+    }
+
+    fn find_file(&self, file_name: &str) -> Option<PathBuf> {
+        get_file_by_name(&self.files, file_name)
+    }
+
+    fn find_dir(&self, dir_name: &str) -> Option<PathBuf> {
+        get_dir_by_name(&self.files, dir_name)
     }
 }
 
@@ -481,4 +498,70 @@ fn create_snapshot_with_symlinks() {
     // links point to the same values as original links
     assert_eq!(snapshot_dir_link_target, target_dir);
     assert_eq!(snapshot_file_link_target, target_file);
+}
+
+#[test]
+fn create_snapshot_with_overlapping_paths() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+
+    let files = tempfile::tempdir().unwrap();
+    let outer_dir = files.path().join("outer_dir");
+    let outer_file = outer_dir.join("outer_file.txt");
+    let inner_dir = outer_dir.join("inner_dir");
+    let inner_file = inner_dir.join("inner_file.txt");
+    create_dir(&outer_dir).unwrap();
+    create_dir(&inner_dir).unwrap();
+    File::create(&outer_file).unwrap();
+    File::create(&inner_file).unwrap();
+
+    create_snapshot(backup, &[outer_dir.as_path(), inner_dir.as_path()]);
+
+    let snapshot = get_entry_from(backup);
+    let snapshot = StubSnapshot::open(snapshot.as_path());
+
+    // Assert index.txt
+    assert_eq!(4, snapshot.index.lines().count());
+    assert!(snapshot.index_contains_all(
+        snapshot.timestamp.as_str(),
+        &[
+            outer_dir.canonicalize().unwrap().as_path(),
+            outer_file.canonicalize().unwrap().as_path(),
+            inner_dir.canonicalize().unwrap().as_path(),
+            inner_file.canonicalize().unwrap().as_path()
+        ]
+    ));
+
+    assert!(snapshot.find_dir("outer_dir").is_some());
+    assert!(snapshot.find_dir("inner_dir").is_some());
+    assert!(snapshot.find_file("outer_file.txt").is_some());
+    assert!(snapshot.find_file("inner_file.txt").is_some());
+}
+
+#[test]
+fn create_snapshot_from_duplicated_and_nonexistent_paths() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let path = tempfile::tempdir().unwrap();
+    let path = path.path();
+    let file = path.join("file.txt");
+    File::create(&file).unwrap();
+    let nonexistent_path = path.join("foobar");
+
+    create_snapshot(backup, &[path, path, nonexistent_path.as_path(), path]);
+
+    let snapshot = get_entry_from(backup);
+    let snapshot = StubSnapshot::open(snapshot.as_path());
+
+    assert_eq!(2, snapshot.index.lines().count());
+    assert!(snapshot.index_contains(
+        snapshot.timestamp.as_str(),
+        path.canonicalize().unwrap().as_path()
+    ));
+    assert!(snapshot.index_contains(
+        snapshot.timestamp.as_str(),
+        file.canonicalize().unwrap().as_path()
+    ));
+
+    assert!(snapshot.find_file("file.txt").is_some());
 }

@@ -72,7 +72,7 @@ impl Snapshot {
         SnapshotPreview::new(location)
     }
 
-    pub fn as_preview(&self) -> SnapshotPreview {
+    pub fn to_preview(&self) -> SnapshotPreview {
         SnapshotPreview::new(self.location.as_path()).unwrap()
     }
 
@@ -108,20 +108,11 @@ impl Snapshot {
         self.timestamp.to_string()
     }
 
-    pub fn backup_files(&mut self, files: &[PathBuf]) -> io::Result<()> {
-        debug!("Started backup process");
-
-        for path in files {
-            self.backup_path_recursively(path);
-        }
-
-        self.index.save()?;
-
-        debug!("Finished backup process");
-        Ok(())
+    pub fn save_index(&self) -> io::Result<()> {
+        self.index.save()
     }
 
-    fn backup_path_recursively(&mut self, path: &Path) {
+    pub fn add_files_to_snapshot(&mut self, path: &Path) {
         for entry in WalkDir::new(path).follow_links(false) {
             let entry = match entry {
                 Ok(entry) => entry,
@@ -292,7 +283,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let mut snapshot = Snapshot::create(root.path()).unwrap();
 
-        let result = snapshot.backup_files(&[PathBuf::from("incorrect path")]);
+        snapshot.add_files_to_snapshot(Path::new("incorrect path"));
+        let result = snapshot.save_index();
         assert!(result.is_ok());
 
         let index_content = fs::read_to_string(snapshot.index.location).unwrap();
