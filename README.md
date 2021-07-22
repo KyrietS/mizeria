@@ -115,7 +115,7 @@ The last snapshot does not have any files because `my_modified_file.txt` hasn't 
 Every module has its own unit tests. This project has also integration/e2e tests to verify given user-cases and scenarios.
 
 ## License
-Copyright © 2020 KyrietS\
+Copyright © 2021 KyrietS\
 Use of this software is granted under the terms of the MIT License.
 
 See the [LICENSE](LICENSE.txt) for the full license text.

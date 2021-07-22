@@ -1,0 +1,78 @@
+name: Build
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  windows:
+    name: Windows build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+      - name: pack binary
+        run: |
+          move target\release\mizeria.exe .
+          7z a -tzip mizeria.zip mizeria.exe
+      - uses: actions/upload-artifact@v2
+        with:
+          name: mizeria-windows
+          path: mizeria.zip
+
+  linux:
+    name: Linux build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+      - name: pack binary
+        run: |
+          mv target/release/mizeria .
+          tar -zcvf mizeria.tar.gz mizeria
+      - uses: actions/upload-artifact@v2
+        with:
+          name: mizeria-linux
+          path: mizeria.tar.gz
+
+  macos:
+    name: macOS build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+      - name: pack binary
+        run: |
+          mv target/release/mizeria .
+          tar -zcvf mizeria.tar.gz mizeria
+      - uses: actions/upload-artifact@v2
+        with:
+          name: mizeria-macos
+          path: mizeria.tar.gz
