@@ -27,6 +27,7 @@ fn parse_args(args: &[String]) -> Result<()> {
     let matches = App::new("mizeria")
         .version(clap::crate_version!())
         .about("Simple backup software")
+        .setting(AppSettings::VersionlessSubcommands)
         .setting(AppSettings::NoBinaryName)
         .subcommand(SubCommand::with_name("backup")
             .about("created backup of specified files")
