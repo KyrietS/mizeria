@@ -21,9 +21,9 @@ impl Files {
         let entry_type = entry_meta.file_type();
 
         return if entry_type.is_dir() {
-            self.copy_dir_entry(&entry)
+            self.copy_dir_entry(entry)
         } else if entry_type.is_file() {
-            self.copy_file_entry(&entry)
+            self.copy_file_entry(entry)
         } else if entry_type.is_symlink() {
             #[cfg(windows)]
             {
@@ -39,13 +39,13 @@ impl Files {
     }
 
     fn copy_dir_entry(&self, dir_to_copy: &Path) -> Result<PathBuf> {
-        let snapshot_entry = self.to_snapshot_path(&dir_to_copy)?;
+        let snapshot_entry = self.to_snapshot_path(dir_to_copy)?;
         fs::create_dir_all(&snapshot_entry)?;
         Ok(snapshot_entry)
     }
 
     fn copy_file_entry(&self, file_to_copy: &Path) -> Result<PathBuf> {
-        let snapshot_entry = self.to_snapshot_path(&file_to_copy)?;
+        let snapshot_entry = self.to_snapshot_path(file_to_copy)?;
         let snapshot_entry_parent = snapshot_entry.parent().ok_or("no parent")?;
         if !snapshot_entry_parent.exists() {
             fs::create_dir_all(snapshot_entry_parent)?;
