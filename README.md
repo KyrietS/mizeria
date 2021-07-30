@@ -60,11 +60,11 @@ mizeria backup --help
 * Repairing corrupted snapshots.
 * And more...
 
-## Some terms used in the project
+## Definitions
 
 * **Backup** – folder with snapshots. 
-* **Snapshot** – folder with a name from time and date when the snapshot was created. Every snapshot contains file `index.txt` and folder `files/`.
-* **Index** – text file stored in every snapshot with a name `index.txt`. It is a list of absolute paths to every file that was present at a time when snapshot was made.
+* **Snapshot** - filder with backed up files and index for them. Snapshot's name consists of date and time when it was created.
+* **Index** – text file stored in every snapshot under the name `index.txt`. It is a list of absolute paths to every file that was present at a time when snapshot was made.
 * **Files** – folder with files that were copied from their origins. The absolute folder structure is preserved.
 
 ## Backup structure
