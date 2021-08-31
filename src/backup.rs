@@ -1,5 +1,6 @@
 use std::{
     borrow::Borrow,
+    ffi::OsStr,
     path::{Path, PathBuf},
 };
 
@@ -44,6 +45,14 @@ impl Backup {
             location: path.to_owned(),
             snapshots,
         })
+    }
+
+    pub fn check_integrity(&self, snapshot_name: &OsStr) -> Result<()> {
+        // TODO: filter self.snapshots baased on snapshot_name (wildcard support)
+        let snapshot_path = self.location.join(snapshot_name);
+        let _snapshot = Snapshot::open(snapshot_path.as_path())?;
+        debug!("Integrity check start");
+        unimplemented!("Work in progress");
     }
 
     pub fn add_snapshot(&mut self, files: &[PathBuf], incremental: bool) -> Result<()> {

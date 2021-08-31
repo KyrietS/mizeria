@@ -49,7 +49,6 @@ impl Snapshot {
         })
     }
 
-    #[allow(dead_code)]
     pub fn open(location: &Path) -> Result<Snapshot, String> {
         let snapshot_name = location
             .file_name()

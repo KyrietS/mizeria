@@ -18,13 +18,20 @@ where
         .map(|e: _| e.as_ref().to_string_lossy().to_string())
         .collect();
 
-    parse_args(&args)?;
-
-    Ok(())
+    let matches = parse_args(&args);
+    execute_subcommand(matches)
 }
 
-fn parse_args(args: &[String]) -> Result<()> {
-    let matches = App::new("mizeria")
+fn execute_subcommand(matches: ArgMatches) -> Result<()> {
+    return match matches.subcommand() {
+        ("backup", Some(args)) => handle_backup(args),
+        ("snapshot", Some(args)) => handle_manage_snapshot(args),
+        _ => Ok(()),
+    };
+}
+
+fn parse_args(args: &[String]) -> ArgMatches {
+    App::new("mizeria")
         .version(clap::crate_version!())
         .about("Simple backup software")
         .setting(AppSettings::VersionlessSubcommands)
@@ -68,13 +75,26 @@ fn parse_args(args: &[String]) -> Result<()> {
                     ))
             )
         )
-        .get_matches_from(args);
+        .subcommand(SubCommand::with_name("snapshot")
+            .about("managing snapshots utilities")
+            .arg(
+                Arg::with_name("SNAPSHOT")
+                    .help("A snapshot to be selected")
+                    .required(true)
+                    .index(1)
+            ))
+        .get_matches_from(args)
+}
 
-    #[allow(clippy::single_match)] // more subcommands will be added later
-    match matches.subcommand() {
-        ("backup", Some(args)) => handle_backup(args)?,
-        _ => (),
-    }
+fn handle_manage_snapshot(args: &ArgMatches) -> Result<()> {
+    let snapshot = args.value_of("SNAPSHOT").unwrap();
+    let snapshot = PathBuf::from(snapshot);
+    let snapshot_name = snapshot.file_name().ok_or("cannot open snapshot")?;
+    let backup_path = snapshot.parent().ok_or("cannot open backup")?;
+    set_verbosity(args);
+
+    let backup = Backup::open(backup_path)?;
+    backup.check_integrity(snapshot_name)?;
 
     Ok(())
 }
@@ -86,6 +106,17 @@ fn handle_backup(args: &ArgMatches) -> Result<()> {
         .unwrap()
         .map(PathBuf::from)
         .collect();
+
+    set_verbosity(args);
+
+    let incremental_snapshot = !args.is_present("full");
+    let mut backup = Backup::open(Path::new(backup))?;
+
+    backup.add_snapshot(files.as_slice(), incremental_snapshot)?;
+    Ok(())
+}
+
+fn set_verbosity(args: &ArgMatches) {
     let log_level = match args.occurrences_of("v") {
         0 => LevelFilter::Warn,
         1 => LevelFilter::Debug,
@@ -94,12 +125,6 @@ fn handle_backup(args: &ArgMatches) -> Result<()> {
     };
 
     init_logger(log_level);
-
-    let incremental_snapshot = !args.is_present("full");
-    let mut backup = Backup::open(Path::new(backup))?;
-
-    backup.add_snapshot(files.as_slice(), incremental_snapshot)?;
-    Ok(())
 }
 
 fn init_logger(log_level: LevelFilter) {
