@@ -3,13 +3,14 @@ use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use env_logger::{Builder, WriteStyle};
 use log::LevelFilter;
 use std::ffi::OsStr;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 mod backup;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-pub fn run_program<C: IntoIterator>(args: C) -> Result<()>
+pub fn run_program<C: IntoIterator>(args: C, writer: &mut impl Write) -> Result<()>
 where
     C::Item: AsRef<OsStr>,
 {
@@ -19,13 +20,13 @@ where
         .collect();
 
     let matches = parse_args(&args);
-    execute_subcommand(matches)
+    execute_subcommand(matches, writer)
 }
 
-fn execute_subcommand(matches: ArgMatches) -> Result<()> {
+fn execute_subcommand(matches: ArgMatches, writer: &mut impl Write) -> Result<()> {
     return match matches.subcommand() {
-        ("backup", Some(args)) => handle_backup(args),
-        ("snapshot", Some(args)) => handle_manage_snapshot(args),
+        ("backup", Some(args)) => handle_backup(args, writer),
+        ("snapshot", Some(args)) => handle_manage_snapshot(args, writer),
         _ => Ok(()),
     };
 }
@@ -86,7 +87,7 @@ fn parse_args(args: &[String]) -> ArgMatches {
         .get_matches_from(args)
 }
 
-fn handle_manage_snapshot(args: &ArgMatches) -> Result<()> {
+fn handle_manage_snapshot(args: &ArgMatches, _writer: &mut impl Write) -> Result<()> {
     let snapshot = args.value_of("SNAPSHOT").unwrap();
     let snapshot = PathBuf::from(snapshot);
     let snapshot_name = snapshot.file_name().ok_or("cannot open snapshot")?;
@@ -99,7 +100,7 @@ fn handle_manage_snapshot(args: &ArgMatches) -> Result<()> {
     Ok(())
 }
 
-fn handle_backup(args: &ArgMatches) -> Result<()> {
+fn handle_backup(args: &ArgMatches, writer: &mut impl Write) -> Result<()> {
     let backup = args.value_of("BACKUP").unwrap();
     let files: Vec<PathBuf> = args
         .values_of("INPUT")
@@ -112,7 +113,9 @@ fn handle_backup(args: &ArgMatches) -> Result<()> {
     let incremental_snapshot = !args.is_present("full");
     let mut backup = Backup::open(Path::new(backup))?;
 
-    backup.add_snapshot(files.as_slice(), incremental_snapshot)?;
+    let timestamp = backup.add_snapshot(files.as_slice(), incremental_snapshot)?;
+    writeln!(writer, "Created snapshot: {}", timestamp)?;
+
     Ok(())
 }
 

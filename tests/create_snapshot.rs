@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 mod utils;
-
-use crate::utils::StubSnapshot;
+pub use crate::utils::*;
 
 fn init_logger() {
     let mut builder = env_logger::Builder::new();
@@ -28,7 +27,7 @@ fn create_snapshot_with_args(backup: &Path, files: &[&Path], args: &[&str]) {
         program_args.push(file.to_string_lossy().to_string());
     }
     init_logger();
-    mizeria::run_program(program_args).expect("program failed");
+    mizeria::run_program(program_args, &mut std::io::sink()).expect("program failed");
 }
 
 fn get_entry_from(folder: &Path) -> PathBuf {

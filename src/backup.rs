@@ -55,7 +55,7 @@ impl Backup {
         unimplemented!("Work in progress");
     }
 
-    pub fn add_snapshot(&mut self, files: &[PathBuf], incremental: bool) -> Result<()> {
+    pub fn add_snapshot(&mut self, files: &[PathBuf], incremental: bool) -> Result<String> {
         debug!("Started backup process");
         let mut new_snapshot = Snapshot::create(self.location.as_path())?;
 
@@ -68,10 +68,9 @@ impl Backup {
         new_snapshot.save_index()?;
 
         debug!("Finished backup process");
-        println!("Created snapshot: {}", new_snapshot.name());
         self.snapshots.push(new_snapshot.to_preview());
 
-        Ok(())
+        Ok(new_snapshot.name())
     }
 
     fn set_incremental_snapshot(&self, snapshot: &mut Snapshot, incremental: bool) {
@@ -199,11 +198,6 @@ mod tests {
         let paths = vec![&path_1, &path_2, &path_3];
 
         let result = Backup::remove_duplicated_paths(paths);
-
-        println!("{}", path_1.display());
-        println!("{}", path_2.display());
-        println!("{}", path_3.display());
-        println!("{:?}", result);
 
         assert_eq!(result.len(), 3);
         assert_eq!(result[0], &path_1);
