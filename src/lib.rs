@@ -2,11 +2,13 @@ use backup::Backup;
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use env_logger::{Builder, WriteStyle};
 use log::LevelFilter;
+use result::IntegrityCheckResult;
 use std::ffi::OsStr;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 mod backup;
+pub mod result;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -87,7 +89,7 @@ fn parse_args(args: &[String]) -> ArgMatches {
         .get_matches_from(args)
 }
 
-fn handle_manage_snapshot(args: &ArgMatches, _writer: &mut impl Write) -> Result<()> {
+fn handle_manage_snapshot(args: &ArgMatches, writer: &mut impl Write) -> Result<()> {
     let snapshot = args.value_of("SNAPSHOT").unwrap();
     let snapshot = PathBuf::from(snapshot);
     let snapshot_name = snapshot.file_name().ok_or("cannot open snapshot")?;
@@ -95,7 +97,14 @@ fn handle_manage_snapshot(args: &ArgMatches, _writer: &mut impl Write) -> Result
     set_verbosity(args);
 
     let backup = Backup::open(backup_path)?;
-    backup.check_integrity(snapshot_name)?;
+    let result = backup.check_integrity(snapshot_name);
+
+    let result_message = match result {
+        IntegrityCheckResult::Success => format!("Snapshot integrity check completed. {}", result),
+        _ => format!("Snapshot integrity check failed. {}", result),
+    };
+
+    writeln!(writer, "{}.", result_message)?;
 
     Ok(())
 }

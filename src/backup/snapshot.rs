@@ -12,6 +12,8 @@ use std::{fs, io};
 use timestamp::Timestamp;
 use walkdir::WalkDir;
 
+use super::IntegrityCheckResult;
+
 pub struct Snapshot {
     location: PathBuf,
     timestamp: Timestamp,
@@ -49,6 +51,7 @@ impl Snapshot {
         })
     }
 
+    #[allow(dead_code)] // will be used in the future to extract metadate of a snapshot
     pub fn open(location: &Path) -> Result<Snapshot, String> {
         let snapshot_name = location
             .file_name()
@@ -184,6 +187,26 @@ impl Snapshot {
             }
             Err(e) => error!("Failed to index: \"{}\" ({})", entry.display(), e),
         }
+    }
+}
+
+impl Snapshot {
+    pub fn check_integrity(location: &Path) -> IntegrityCheckResult {
+        let snapshot_name = match location.file_name() {
+            Some(name) => name,
+            None => return IntegrityCheckResult::SnapshotDoesntExist,
+        };
+        if !Snapshot::has_valid_name(snapshot_name.to_string_lossy()) {
+            return IntegrityCheckResult::SnapshotNameIsInvalidTimestamp;
+        }
+        if !location.join("index.txt").exists() {
+            return IntegrityCheckResult::IndexFileDoesntExist;
+        }
+        if !location.join("files").exists() {
+            return IntegrityCheckResult::FilesFolderDoesntExist;
+        }
+
+        IntegrityCheckResult::Success
     }
 }
 

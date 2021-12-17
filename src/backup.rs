@@ -7,6 +7,8 @@ use std::{
 use log::{debug, warn};
 use snapshot::{Snapshot, SnapshotPreview};
 
+use crate::result::IntegrityCheckResult;
+
 mod snapshot;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -47,12 +49,10 @@ impl Backup {
         })
     }
 
-    pub fn check_integrity(&self, snapshot_name: &OsStr) -> Result<()> {
-        // TODO: filter self.snapshots baased on snapshot_name (wildcard support)
-        let snapshot_path = self.location.join(snapshot_name);
-        let _snapshot = Snapshot::open(snapshot_path.as_path())?;
+    pub fn check_integrity(&self, snapshot_name: &OsStr) -> IntegrityCheckResult {
         debug!("Integrity check start");
-        unimplemented!("Work in progress");
+        let snapshot_path = self.location.join(snapshot_name);
+        Snapshot::check_integrity(&snapshot_path)
     }
 
     pub fn add_snapshot(&mut self, files: &[PathBuf], incremental: bool) -> Result<String> {
