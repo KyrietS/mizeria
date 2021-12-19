@@ -4,7 +4,7 @@ mod timestamp;
 
 use files::Files;
 use index::{Index, IndexPreview};
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
@@ -199,11 +199,25 @@ impl Snapshot {
         if !Snapshot::has_valid_name(snapshot_name.to_string_lossy()) {
             return IntegrityCheckResult::SnapshotNameIsInvalidTimestamp;
         }
-        if !location.join("index.txt").exists() {
-            return IntegrityCheckResult::IndexFileDoesntExist;
+
+        let index_integrity_result = Index::check_integrity(location.join("index.txt"));
+        match index_integrity_result {
+            IntegrityCheckResult::Success => info!("Index integrity check passed"),
+            _ => return index_integrity_result,
         }
-        if !location.join("files").exists() {
-            return IntegrityCheckResult::FilesFolderDoesntExist;
+
+        let index = match Index::open(location.join("index.txt")) {
+            Ok(index) => index,
+            Err(err) => return IntegrityCheckResult::UnexpectedError(err),
+        };
+
+        // TODO: remove this transformation and pass iterator to avoid memory allocation
+        let entries = index.entries.iter().map(|e| &e.path).collect();
+
+        let files_integrity_result = Files::check_integrity(location.join("files"), entries);
+        match files_integrity_result {
+            IntegrityCheckResult::Success => info!("Files integrity check passed"),
+            _ => return files_integrity_result,
         }
 
         IntegrityCheckResult::Success

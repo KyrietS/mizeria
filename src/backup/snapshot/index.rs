@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+use crate::result::IntegrityCheckResult;
+
 use super::timestamp::Timestamp;
 
 #[derive(Clone)]
@@ -49,6 +51,19 @@ impl Index {
         }
         file.flush()?;
         Ok(())
+    }
+
+    pub fn check_integrity(location: PathBuf) -> IntegrityCheckResult {
+        if !location.exists() {
+            return IntegrityCheckResult::IndexFileDoesntExist;
+        }
+
+        // TODO: check validity of index entries:
+        // 1) Timestamp is correct
+        // 2) Path is correct. File doesn't have to exist, only path itself must be valid.
+        //    Example of invalid path: "!@#$%^&"
+
+        IntegrityCheckResult::Success
     }
 }
 

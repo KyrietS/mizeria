@@ -1,6 +1,11 @@
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Component, Components, Path, PathBuf, Prefix, PrefixComponent};
 use std::{fs, io};
+
+use walkdir::WalkDir;
+
+use crate::result::IntegrityCheckResult;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -14,6 +19,42 @@ impl Files {
             fs::create_dir(&location).expect("Error creating files dir");
         }
         Files { root: location }
+    }
+
+    pub fn check_integrity(
+        location: PathBuf,
+        indexed_files: Vec<&PathBuf>,
+    ) -> IntegrityCheckResult {
+        let mut index_set = HashSet::new();
+        for indexed_file in indexed_files {
+            let local_path = match Files::to_snapshot_path(&location, indexed_file.as_path()) {
+                Ok(path) => path,
+                Err(err) => return IntegrityCheckResult::UnexpectedError(format!("{}", err)),
+            };
+            index_set.insert(local_path);
+        }
+
+        if !location.exists() || !location.is_dir() {
+            return IntegrityCheckResult::FilesFolderDoesntExist;
+        }
+
+        for entry in WalkDir::new(location).min_depth(1).follow_links(false) {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => return IntegrityCheckResult::UnexpectedError(format!("{}", e)),
+            };
+
+            let entry = entry.path();
+            // TODO: in order to check if a file is indexed but not present I should
+            // remove entry from hashmap rgith here and after WalkDir finishes
+            // I should check if 'index_set' is empty. Every leftovoer is a candidate
+            // to 'indexed but not present' integrity error.
+            if !index_set.contains(entry) {
+                return IntegrityCheckResult::EntryExistsButNotIndexed(entry.to_owned());
+            }
+        }
+
+        IntegrityCheckResult::Success
     }
 
     pub fn copy_entry(&self, entry: &Path) -> Result<PathBuf> {
@@ -39,13 +80,13 @@ impl Files {
     }
 
     fn copy_dir_entry(&self, dir_to_copy: &Path) -> Result<PathBuf> {
-        let snapshot_entry = self.to_snapshot_path(dir_to_copy)?;
+        let snapshot_entry = Files::to_snapshot_path(&self.root, dir_to_copy)?;
         fs::create_dir_all(&snapshot_entry)?;
         Ok(snapshot_entry)
     }
 
     fn copy_file_entry(&self, file_to_copy: &Path) -> Result<PathBuf> {
-        let snapshot_entry = self.to_snapshot_path(file_to_copy)?;
+        let snapshot_entry = Files::to_snapshot_path(&self.root, file_to_copy)?;
         let snapshot_entry_parent = snapshot_entry.parent().ok_or("no parent")?;
         if !snapshot_entry_parent.exists() {
             fs::create_dir_all(snapshot_entry_parent)?;
@@ -59,7 +100,7 @@ impl Files {
         let link_parent = link_to_copy.parent().ok_or("no parent")?;
         let link_file_name = link_to_copy.file_name().ok_or("invalid file name")?;
 
-        let snapshot_entry_parent = self.to_snapshot_path(link_parent)?;
+        let snapshot_entry_parent = Files::to_snapshot_path(&self.root, link_parent)?;
         let snapshot_entry = snapshot_entry_parent.join(link_file_name);
         if !snapshot_entry_parent.exists() {
             fs::create_dir_all(snapshot_entry_parent)?;
@@ -69,12 +110,12 @@ impl Files {
         Ok(snapshot_entry)
     }
 
-    fn to_snapshot_path(&self, entry: &Path) -> io::Result<PathBuf> {
+    fn to_snapshot_path(root: &Path, entry: &Path) -> io::Result<PathBuf> {
         let absolute_entry = fs::canonicalize(entry)?;
         let snapshot_relative_entry =
             Self::join_components_to_relative_path(absolute_entry.components());
 
-        Ok(self.root.join(snapshot_relative_entry))
+        Ok(root.join(snapshot_relative_entry))
     }
 
     fn join_components_to_relative_path(components: Components) -> PathBuf {

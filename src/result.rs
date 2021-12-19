@@ -10,6 +10,7 @@ pub enum IntegrityCheckResult {
     IndexFileContainsInvalidPathInLine(u32),
     EntryIndexedButNotExists(PathBuf),
     EntryExistsButNotIndexed(PathBuf),
+    UnexpectedError(String),
 }
 
 impl IntegrityCheckResult {
@@ -36,6 +37,9 @@ impl IntegrityCheckResult {
                 "Entry '{}' found in snapshot, but not indexed.",
                 path.display()
             ),
+            IntegrityCheckResult::UnexpectedError(message) => {
+                format!("Unexpected error occured: {}", message)
+            }
         }
     }
 }

@@ -122,3 +122,25 @@ fn check_integrity_for_snapshot_without_files_folder() {
     let output = check_snapshot_integrity(snapshot.as_path());
     expect_result(output, IntegrityCheckResult::FilesFolderDoesntExist);
 }
+
+#[test]
+fn check_integrity_for_snapshot_with_file_present_but_not_indexed() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let snapshot_name = "2021-07-15_18.34";
+    let snapshot = backup.join(snapshot_name);
+    fs::create_dir(&snapshot).unwrap();
+    // empty index
+    let index = snapshot.join("index.txt");
+    File::create(&index).unwrap();
+    let files = snapshot.join("files");
+    fs::create_dir(&files).unwrap();
+    let my_file = files.join("my_file.txt");
+    File::create(&my_file).unwrap();
+
+    let output = check_snapshot_integrity(snapshot.as_path());
+    expect_result(
+        output,
+        IntegrityCheckResult::EntryExistsButNotIndexed(my_file),
+    );
+}
