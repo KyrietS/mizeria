@@ -235,7 +235,7 @@ fn check_integrity_for_snapshot_created_with_command() {
     let files = tempfile::tempdir().unwrap();
     File::create(files.path().join("dummy_file.txt")).unwrap();
 
-    let output = check_snapshot_integrity(Path::new("2021-07-14_18.34"));
+    let output = check_snapshot_integrity(backup.path().join("2021-07-14_18.34").as_path());
     expect_result(output, IntegrityCheckResult::SnapshotDoesntExist);
 
     let args = vec![

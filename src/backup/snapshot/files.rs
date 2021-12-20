@@ -29,10 +29,7 @@ impl Files {
         debug!("Building a map of indexed files");
         let mut index_map = HashMap::new();
         for indexed_file in indexed_files {
-            let local_path = match Files::to_snapshot_path(&location, indexed_file.as_path()) {
-                Ok(path) => path,
-                Err(err) => return IntegrityCheckResult::UnexpectedError(format!("{}", err)),
-            };
+            let local_path = Self::to_snapshot_path_unchecked(&location, indexed_file.as_path());
             index_map.insert(local_path, indexed_file);
         }
 
@@ -123,9 +120,17 @@ impl Files {
     }
 
     fn to_snapshot_path(root: &Path, entry: &Path) -> io::Result<PathBuf> {
-        let snapshot_relative_entry = Self::join_components_to_relative_path(entry.components());
+        // this entry must phisically exist
+        let absolute_entry = fs::canonicalize(entry)?;
+        Ok(Self::to_snapshot_path_unchecked(
+            root,
+            absolute_entry.as_path(),
+        ))
+    }
 
-        Ok(root.join(snapshot_relative_entry))
+    fn to_snapshot_path_unchecked(root: &Path, entry: &Path) -> PathBuf {
+        let snapshot_relative_entry = Self::join_components_to_relative_path(entry.components());
+        root.join(snapshot_relative_entry)
     }
 
     fn join_components_to_relative_path(components: Components) -> PathBuf {

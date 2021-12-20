@@ -124,14 +124,7 @@ impl Snapshot {
                 }
             };
 
-            let entry = match fs::canonicalize(entry.path()) {
-                Ok(path) => path,
-                Err(e) => {
-                    error!("{}", e);
-                    continue;
-                }
-            };
-            let entry = entry.as_path();
+            let entry = entry.path();
 
             match self.is_entry_already_backed_up(entry) {
                 Some(prev_timestamp) => self.index_entry(prev_timestamp, entry),
