@@ -68,14 +68,14 @@ fn parse_args(args: &[String]) -> ArgMatches {
             )
             .arg(
                 Arg::with_name("v")
-                    .short("v")
-                    .multiple(true)
-                    .help("Sets the level of verbosity")
-                    .long_help(concat!(
-                        "Use -v to turn on debug logs showing steps in producing a backup.\n",
-                        "Use -vv to see debug and trace logs that show every file being indexed and copied.\n",
-                        "By default only warning and error logs are printed."
-                    ))
+                .short("v")
+                .multiple(true)
+                .help("Sets the level of verbosity")
+                .long_help(concat!(
+                    "Use -v to turn on debug logs showing steps in producing a backup.\n",
+                    "Use -vv to see debug and trace logs that show every file being indexed and copied.\n",
+                    "By default only warning and error logs are printed."
+                ))
             )
         )
         .subcommand(SubCommand::with_name("snapshot")
@@ -85,7 +85,17 @@ fn parse_args(args: &[String]) -> ArgMatches {
                     .help("A snapshot to be selected")
                     .required(true)
                     .index(1)
-            ))
+            )
+            .arg(Arg::with_name("v")
+            .short("v")
+            .multiple(true)
+            .help("Sets the level of verbosity")
+            .long_help(concat!(
+                "Use -v to turn on debug logs showing internal steps during integrity check.\n",
+                "Use -vv to see debug and trace logs that show every file being verified.\n",
+                "By default only warning and error logs are printed."
+            )))
+        )
         .get_matches_from(args)
 }
 
@@ -104,7 +114,7 @@ fn handle_manage_snapshot(args: &ArgMatches, writer: &mut impl Write) -> Result<
         _ => format!("Snapshot integrity check failed. {}", result),
     };
 
-    writeln!(writer, "{}.", result_message)?;
+    writeln!(writer, "{}", result_message)?;
 
     Ok(())
 }

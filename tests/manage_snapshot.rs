@@ -92,7 +92,10 @@ fn check_integrity_for_snapshot_with_invalid_name() {
     File::create(&index).unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(output, IntegrityCheckResult::SnapshotNameIsInvalidTimestamp);
+    expect_result(
+        output,
+        IntegrityCheckResult::SnapshotNameHasInvalidTimestamp(String::from(snapshot_name)),
+    );
 }
 
 #[test]
@@ -143,4 +146,114 @@ fn check_integrity_for_snapshot_with_file_present_but_not_indexed() {
         output,
         IntegrityCheckResult::EntryExistsButNotIndexed(my_file),
     );
+}
+
+#[test]
+fn check_integrity_for_snapshot_with_folder_present_but_not_indexed() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let snapshot_name = "2021-07-15_18.34";
+    let snapshot = backup.join(snapshot_name);
+    fs::create_dir(&snapshot).unwrap();
+    // empty index
+    let index = snapshot.join("index.txt");
+    File::create(&index).unwrap();
+    let files = snapshot.join("files");
+    fs::create_dir(&files).unwrap();
+    let my_file = files.join("my_folder");
+    fs::create_dir(&my_file).unwrap();
+
+    let output = check_snapshot_integrity(snapshot.as_path());
+    expect_result(
+        output,
+        IntegrityCheckResult::EntryExistsButNotIndexed(my_file),
+    );
+}
+
+#[test]
+fn check_integrity_for_snapshot_with_file_indexed_but_not_present() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let snapshot_name = "2021-07-15_18.34";
+    let snapshot = backup.join(snapshot_name);
+
+    let dummy_dir = tempfile::tempdir().unwrap();
+    let missing_file_name = "my_file.txt";
+    let missing_file_path = dummy_dir.path().join(missing_file_name);
+
+    fs::create_dir(&snapshot).unwrap();
+    let index = snapshot.join("index.txt");
+    File::create(&index)
+        .unwrap()
+        .write_all(format!("{} {}", snapshot_name, missing_file_path.display()).as_bytes())
+        .unwrap();
+
+    let files = snapshot.join("files");
+    fs::create_dir(&files).unwrap();
+
+    let output = check_snapshot_integrity(snapshot.as_path());
+    expect_result(
+        output,
+        IntegrityCheckResult::EntryIndexedButNotExists(missing_file_path),
+    );
+}
+
+#[test]
+fn check_integrity_for_snapshot_with_file_indexed_in_another_snapshot_and_not_present() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let snapshot_name = "2021-07-15_18.34";
+    let snapshot = backup.join(snapshot_name);
+
+    let dummy_dir = tempfile::tempdir().unwrap();
+    let missing_file_name = "my_file.txt";
+    let missing_file_path = dummy_dir.path().join(missing_file_name);
+
+    fs::create_dir(&snapshot).unwrap();
+    let index = snapshot.join("index.txt");
+    File::create(&index)
+        .unwrap()
+        .write_all(format!("{} {}", "2021-07-14_18.34", missing_file_path.display()).as_bytes())
+        .unwrap();
+
+    let files = snapshot.join("files");
+    fs::create_dir(&files).unwrap();
+
+    let output = check_snapshot_integrity(snapshot.as_path());
+
+    // Note: for now we don't support deep integrity check.
+    // So mizeria won't be looking at entries from another
+    // snapshots. In the future I introduce a flag to check
+    // all snapshots recursively and this test should fail.
+    expect_result(output, IntegrityCheckResult::Success);
+}
+
+#[test]
+fn check_integrity_for_snapshot_created_with_command() {
+    let backup = tempfile::tempdir().unwrap();
+
+    let files = tempfile::tempdir().unwrap();
+    File::create(files.path().join("dummy_file.txt")).unwrap();
+
+    let output = check_snapshot_integrity(Path::new("2021-07-14_18.34"));
+    expect_result(output, IntegrityCheckResult::SnapshotDoesntExist);
+
+    let args = vec![
+        String::from("backup"),
+        String::from(backup.path().to_string_lossy()),
+        String::from(files.path().to_string_lossy()),
+    ];
+    // create one snapshot with file and one incremental empty snapshot
+    mizeria::run_program(&args, &mut std::io::sink()).expect("program failed");
+    mizeria::run_program(&args, &mut std::io::sink()).expect("program failed");
+
+    let backup = backup.path().read_dir().unwrap();
+    let snapshots: Vec<fs::DirEntry> = backup.filter_map(Result::ok).collect();
+
+    assert_eq!(snapshots.len(), 2);
+
+    let output = check_snapshot_integrity(&snapshots[0].path());
+    expect_result(output, IntegrityCheckResult::Success);
+    let output = check_snapshot_integrity(&snapshots[1].path());
+    expect_result(output, IntegrityCheckResult::Success);
 }

@@ -1,8 +1,9 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Component, Components, Path, PathBuf, Prefix, PrefixComponent};
 use std::{fs, io};
 
+use log::{debug, trace};
 use walkdir::WalkDir;
 
 use crate::result::IntegrityCheckResult;
@@ -21,37 +22,48 @@ impl Files {
         Files { root: location }
     }
 
-    pub fn check_integrity(
+    pub fn check_integrity<'a>(
         location: PathBuf,
-        indexed_files: Vec<&PathBuf>,
+        indexed_files: impl Iterator<Item = &'a PathBuf>,
     ) -> IntegrityCheckResult {
-        let mut index_set = HashSet::new();
+        debug!("Building a map of indexed files");
+        let mut index_map = HashMap::new();
         for indexed_file in indexed_files {
             let local_path = match Files::to_snapshot_path(&location, indexed_file.as_path()) {
                 Ok(path) => path,
                 Err(err) => return IntegrityCheckResult::UnexpectedError(format!("{}", err)),
             };
-            index_set.insert(local_path);
+            index_map.insert(local_path, indexed_file);
         }
 
         if !location.exists() || !location.is_dir() {
             return IntegrityCheckResult::FilesFolderDoesntExist;
         }
 
+        debug!("Traversing snapshot files has started");
         for entry in WalkDir::new(location).min_depth(1).follow_links(false) {
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(e) => return IntegrityCheckResult::UnexpectedError(format!("{}", e)),
             };
+            trace!("Found file: {}", entry.path().display());
 
+            // Remove indexed entry so we know that it is present.
             let entry = entry.path();
-            // TODO: in order to check if a file is indexed but not present I should
-            // remove entry from hashmap rgith here and after WalkDir finishes
-            // I should check if 'index_set' is empty. Every leftovoer is a candidate
-            // to 'indexed but not present' integrity error.
-            if !index_set.contains(entry) {
+            let entry_was_indexed = index_map.remove(entry).is_some();
+
+            // Don't raise an error when you don't find a folder like 'C\Program Files'
+            // in index. Of course it's a subpath of some other paths but it's
+            // not explicitly indexed.
+            let is_subpath_of_another_entry = index_map.iter().any(|(e, _)| e.starts_with(entry));
+            if !entry_was_indexed && !is_subpath_of_another_entry {
                 return IntegrityCheckResult::EntryExistsButNotIndexed(entry.to_owned());
             }
+        }
+
+        // All remaining elements indicate entries that were not found.
+        if let Some((_, index_path)) = index_map.iter().next() {
+            return IntegrityCheckResult::EntryIndexedButNotExists(index_path.to_path_buf());
         }
 
         IntegrityCheckResult::Success
@@ -111,9 +123,7 @@ impl Files {
     }
 
     fn to_snapshot_path(root: &Path, entry: &Path) -> io::Result<PathBuf> {
-        let absolute_entry = fs::canonicalize(entry)?;
-        let snapshot_relative_entry =
-            Self::join_components_to_relative_path(absolute_entry.components());
+        let snapshot_relative_entry = Self::join_components_to_relative_path(entry.components());
 
         Ok(root.join(snapshot_relative_entry))
     }

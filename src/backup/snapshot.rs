@@ -124,7 +124,14 @@ impl Snapshot {
                 }
             };
 
-            let entry = entry.path();
+            let entry = match fs::canonicalize(entry.path()) {
+                Ok(path) => path,
+                Err(e) => {
+                    error!("{}", e);
+                    continue;
+                }
+            };
+            let entry = entry.as_path();
 
             match self.is_entry_already_backed_up(entry) {
                 Some(prev_timestamp) => self.index_entry(prev_timestamp, entry),
@@ -192,12 +199,15 @@ impl Snapshot {
 
 impl Snapshot {
     pub fn check_integrity(location: &Path) -> IntegrityCheckResult {
+        if !location.exists() {
+            return IntegrityCheckResult::SnapshotDoesntExist;
+        }
         let snapshot_name = match location.file_name() {
-            Some(name) => name,
-            None => return IntegrityCheckResult::SnapshotDoesntExist,
+            Some(name) => name.to_string_lossy(),
+            None => return IntegrityCheckResult::SnapshotNameHasInvalidTimestamp("..".into()),
         };
-        if !Snapshot::has_valid_name(snapshot_name.to_string_lossy()) {
-            return IntegrityCheckResult::SnapshotNameIsInvalidTimestamp;
+        if !Snapshot::has_valid_name(&snapshot_name) {
+            return IntegrityCheckResult::SnapshotNameHasInvalidTimestamp(snapshot_name.into());
         }
 
         let index_integrity_result = Index::check_integrity(location.join("index.txt"));
@@ -211,10 +221,16 @@ impl Snapshot {
             Err(err) => return IntegrityCheckResult::UnexpectedError(err),
         };
 
-        // TODO: remove this transformation and pass iterator to avoid memory allocation
-        let entries = index.entries.iter().map(|e| &e.path).collect();
+        warn!("This is just a shallow integrity check of one snapshot!");
+        warn!("Deep (full) integrity check for the entire backup is not yet implemented.");
+        let entries_from_this_snapshot = index
+            .entries
+            .iter()
+            .filter(|e| e.timestamp.to_string() == snapshot_name)
+            .map(|e| &e.path);
 
-        let files_integrity_result = Files::check_integrity(location.join("files"), entries);
+        let files_integrity_result =
+            Files::check_integrity(location.join("files"), entries_from_this_snapshot);
         match files_integrity_result {
             IntegrityCheckResult::Success => info!("Files integrity check passed"),
             _ => return files_integrity_result,

@@ -3,7 +3,7 @@ use std::{fmt::Display, path::PathBuf};
 pub enum IntegrityCheckResult {
     Success,
     SnapshotDoesntExist,
-    SnapshotNameIsInvalidTimestamp,
+    SnapshotNameHasInvalidTimestamp(String),
     IndexFileDoesntExist,
     FilesFolderDoesntExist,
     IndexFileContainsInvalidTimestampInLine(u32),
@@ -18,8 +18,8 @@ impl IntegrityCheckResult {
         match self {
             Self::Success => "No problems found.".into(),
             Self::SnapshotDoesntExist => "Snapshot doesn't exist.".into(),
-            Self::SnapshotNameIsInvalidTimestamp => {
-                "Snapshot's name is not a correct timestamp.".into()
+            Self::SnapshotNameHasInvalidTimestamp(name) => {
+                format!("Snapshot's name '{}' is not a correct timestamp.", name)
             }
             Self::IndexFileDoesntExist => "Files index.txt is missing.".into(),
             Self::FilesFolderDoesntExist => "Folder files is missing.".into(),
@@ -30,11 +30,11 @@ impl IntegrityCheckResult {
                 format!("Invalid path in line {} of index.txt.", line)
             }
             IntegrityCheckResult::EntryIndexedButNotExists(path) => format!(
-                "Entry '{}' is indexed, but missing in snapshot.",
+                "Entry '{}' is indexed, but is missing in snapshot.",
                 path.display()
             ),
             IntegrityCheckResult::EntryExistsButNotIndexed(path) => format!(
-                "Entry '{}' found in snapshot, but not indexed.",
+                "Entry '{}' is present in snapshot, but is not indexed.",
                 path.display()
             ),
             IntegrityCheckResult::UnexpectedError(message) => {
