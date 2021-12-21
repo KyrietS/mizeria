@@ -229,6 +229,86 @@ fn check_integrity_for_snapshot_with_file_indexed_in_another_snapshot_and_not_pr
 }
 
 #[test]
+fn check_integrity_for_snapshot_with_invalid_index() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let snapshot_name = "2021-07-15_18.34";
+    let snapshot = backup.join(snapshot_name);
+    fs::create_dir(&snapshot).unwrap();
+    let index = snapshot.join("index.txt");
+    let files = snapshot.join("files");
+    fs::create_dir(files).unwrap();
+    File::create(&index)
+        .unwrap()
+        .write_all(b"sometextwithoutspace")
+        .unwrap();
+
+    let output = check_snapshot_integrity(snapshot.as_path());
+    expect_result(
+        output,
+        IntegrityCheckResult::IndexFileContainsInvalidTimestampInLine(1),
+    );
+}
+
+#[test]
+fn check_integrity_for_snapshot_with_invalid_index_timestamp() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let snapshot_name = "2021-07-15_18.34";
+    let snapshot = backup.join(snapshot_name);
+    fs::create_dir(&snapshot).unwrap();
+    let index = snapshot.join("index.txt");
+    let files = snapshot.join("files");
+    fs::create_dir(files).unwrap();
+    let index_data = format!(
+        "{} {}\n{} {}",
+        snapshot_name,
+        backup.display(),
+        "2021-99-15_18.34",
+        backup.display()
+    );
+    File::create(&index)
+        .unwrap()
+        .write_all(index_data.as_bytes())
+        .unwrap();
+
+    let output = check_snapshot_integrity(snapshot.as_path());
+    expect_result(
+        output,
+        IntegrityCheckResult::IndexFileContainsInvalidTimestampInLine(2),
+    );
+}
+
+#[test]
+fn check_integrity_for_snapshot_with_invalid_index_path() {
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+    let snapshot_name = "2021-07-15_18.34";
+    let snapshot = backup.join(snapshot_name);
+    fs::create_dir(&snapshot).unwrap();
+    let index = snapshot.join("index.txt");
+    let files = snapshot.join("files");
+    fs::create_dir(files).unwrap();
+    let index_data = format!(
+        "{} {}\n{} {}",
+        snapshot_name,
+        backup.display(),
+        snapshot_name,
+        "relative/path/is/invalid"
+    );
+    File::create(&index)
+        .unwrap()
+        .write_all(index_data.as_bytes())
+        .unwrap();
+
+    let output = check_snapshot_integrity(snapshot.as_path());
+    expect_result(
+        output,
+        IntegrityCheckResult::IndexFileContainsInvalidPathInLine(2),
+    );
+}
+
+#[test]
 fn check_integrity_for_snapshot_created_with_command() {
     let backup = tempfile::tempdir().unwrap();
 

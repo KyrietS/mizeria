@@ -1,13 +1,16 @@
 use std::{fmt::Display, path::PathBuf};
 
+// TODO: Change this to 'IntegrityCheckError' and remove 'Success' from the list.
+//       Also, change function returning values from 'IntegrityCheckResult' to
+//       Result<(), IntegrityCheckResult>
 pub enum IntegrityCheckResult {
     Success,
     SnapshotDoesntExist,
     SnapshotNameHasInvalidTimestamp(String),
     IndexFileDoesntExist,
     FilesFolderDoesntExist,
-    IndexFileContainsInvalidTimestampInLine(u32),
-    IndexFileContainsInvalidPathInLine(u32),
+    IndexFileContainsInvalidTimestampInLine(usize),
+    IndexFileContainsInvalidPathInLine(usize),
     EntryIndexedButNotExists(PathBuf),
     EntryExistsButNotIndexed(PathBuf),
     UnexpectedError(String),
