@@ -63,7 +63,7 @@ mizeria backup --help
 ## Definitions
 
 * **Backup** – folder with snapshots. 
-* **Snapshot** - filder with backed up files and index for them. Snapshot's name consists of date and time when it was created.
+* **Snapshot** - folder with backed up files and index for them. Snapshot's name consists of date and time when it was created.
 * **Index** – text file stored in every snapshot under the name `index.txt`. It is a list of absolute paths to every file that was present at a time when snapshot was made.
 * **Files** – folder with files that were copied from their origins. The absolute folder structure is preserved.
 
@@ -109,7 +109,7 @@ Let's look at the contents of a particular index.txt files from the backup above
 2021-07-27_13.45 C:\\my_folder\my_modified_file.txt
 ```
 
-The last snapshot does not have any files because `my_modified_file.txt` hasn't changed since last snapshot so incremental backup is performed. The unmodified file is noted in the index but it's pointing into the previous snapshot (see date before the file path).
+The last snapshot does not have any files because `my_modified_file.txt` hasn't changed since the last snapshot, so an incremental backup has been performed. The unmodified file is listed in the index but it's pointing into the previous snapshot (see date before the file path).
 
 ## Tests
 
