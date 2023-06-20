@@ -13,7 +13,7 @@ pub fn generate_snapshot_name() -> String {
 
 pub fn format_snapshot_name(datetime: chrono::DateTime<chrono::Local>) -> String {
     use chrono::{Datelike, Timelike};
-    let date = datetime.date();
+    let date = datetime.date_naive();
     let time = datetime.time();
     format!(
         "{}-{:02}-{:02}_{:02}.{:02}",

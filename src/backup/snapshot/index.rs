@@ -68,7 +68,7 @@ impl Index {
         let file = BufReader::new(&file);
 
         debug!("Traversing index has started");
-        for (line_num, read_line) in file.lines().into_iter().enumerate() {
+        for (line_num, read_line) in file.lines().enumerate() {
             let line_num = line_num + 1;
             let line = match read_line {
                 Ok(line) => line,
@@ -146,7 +146,7 @@ pub struct IndexPreview {
 
 impl IndexPreview {
     pub fn open(path: &Path) -> Result<Self, String> {
-        let file = File::open(&path).or(Err("Cannot open index.txt"))?;
+        let file = File::open(path).or(Err("Cannot open index.txt"))?;
         let file = BufReader::new(&file);
         let mut entries = HashMap::default();
         for line in file.lines() {

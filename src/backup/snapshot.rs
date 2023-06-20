@@ -259,7 +259,7 @@ struct SnapshotConfig {
     base_index: Option<IndexPreview>,
 }
 
-impl<'a> SnapshotConfig {
+impl SnapshotConfig {
     fn default() -> Self {
         Self { base_index: None }
     }
@@ -278,8 +278,8 @@ impl SnapshotPreview {
         let index = location.join("index.txt");
         let files = location.join("files");
 
-        index.exists().then(|| ())?;
-        files.exists().then(|| ())?;
+        index.exists().then_some(())?;
+        files.exists().then_some(())?;
 
         Some(SnapshotPreview {
             timestamp,
