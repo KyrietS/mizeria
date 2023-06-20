@@ -13,12 +13,12 @@ doctest = false
 
 [dependencies]
 walkdir = "2.3"
-chrono = "0.4"
-regex = "1.5"
+chrono = "0.4.26"
+regex = "1.8"
 log = "0.4.0"
 env_logger = "0.8.4"
 clap = "2.33"
 ahash = "0.7.4"
 
 [dev-dependencies]
-tempfile = "3.2"
+tempfile = "3.6"
