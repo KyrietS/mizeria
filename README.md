@@ -2,10 +2,10 @@
 
 [![Mizeria release](https://img.shields.io/github/v/release/KyrietS/mizeria?include_prereleases&sort=semver)](https://github.com/KyrietS/mizeria/releases)
 [![Lincense](https://img.shields.io/github/license/KyrietS/mizeria)](LICENSE.txt)
-[![Windows](https://img.shields.io/github/workflow/status/KyrietS/mizeria/Windows/master?label=windows)](https://github.com/KyrietS/mizeria/actions/workflows/windows.yml)
-[![Linux](https://img.shields.io/github/workflow/status/KyrietS/mizeria/Linux/master?label=linux)](https://github.com/KyrietS/mizeria/actions/workflows/linux.yml)
-[![macOS](https://img.shields.io/github/workflow/status/KyrietS/mizeria/macOS/master?label=macos)](https://github.com/KyrietS/mizeria/actions/workflows/macos.yml)
-[![Static Analysis](https://img.shields.io/github/workflow/status/KyrietS/mizeria/Static%20analysis/master?label=static%20analysis)](https://github.com/KyrietS/mizeria/actions/workflows/static-analysis.yml)
+[![Windows](https://github.com/KyrietS/mizeria/actions/workflows/windows.yml/badge.svg)](https://github.com/KyrietS/mizeria/actions/workflows/windows.yml)
+[![Linux](https://github.com/KyrietS/mizeria/actions/workflows/linux.yml/badge.svg)](https://github.com/KyrietS/mizeria/actions/workflows/linux.yml)
+[![macOS](https://github.com/KyrietS/mizeria/actions/workflows/macos.yml/badge.svg)](https://github.com/KyrietS/mizeria/actions/workflows/macos.yml)
+[![Static analysis](https://github.com/KyrietS/mizeria/actions/workflows/static-analysis.yml/badge.svg)](https://github.com/KyrietS/mizeria/actions/workflows/static-analysis.yml)
 
 Mizeria is a simple program for making backups. It is written in Rust and it supports Windows, Linux and macOS. The goal of this project is to provide straightforward and easy to understand structure of a backup.
 
