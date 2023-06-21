@@ -7,7 +7,7 @@ use regex::Regex;
 use walkdir::WalkDir;
 
 pub fn generate_snapshot_name() -> String {
-    let local = time::OffsetDateTime::now_local().unwrap();
+    let local = time::OffsetDateTime::now_local().unwrap_or(time::OffsetDateTime::now_utc());
     format_snapshot_name(local)
 }
 

@@ -192,7 +192,7 @@ fn create_incremental_snapshot() {
     // snapshot has a newer version of a file compared to modification
     // time in the filestystem. Program will read this as the latest snapshot
     // and it will create incremental backup based on this.
-    let future_datetime = time::OffsetDateTime::now_local().unwrap() + time::Duration::hours(1);
+    let future_datetime = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
     let previous_snapshot_timestamp = utils::format_snapshot_name(future_datetime);
     let previous_snapshot_path = backup.join(&previous_snapshot_timestamp);
     fs::create_dir(&previous_snapshot_path).unwrap();
@@ -292,7 +292,7 @@ fn force_full_snapshot() {
 
     File::create(&file_to_backup).unwrap();
 
-    let past_datetime = time::OffsetDateTime::now_local().unwrap() - time::Duration::hours(1);
+    let past_datetime = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
     let previous_snapshot_timestamp = utils::format_snapshot_name(past_datetime);
     let previous_snapshot_path = backup.join(&previous_snapshot_timestamp);
     fs::create_dir(&previous_snapshot_path).unwrap();
