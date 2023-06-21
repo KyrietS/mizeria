@@ -134,7 +134,7 @@ impl Snapshot {
     }
 
     fn is_entry_already_backed_up(&self, entry: &Path) -> Option<Timestamp> {
-        let margin = chrono::Duration::minutes(1);
+        let margin = time::Duration::minutes(1);
         let prev_timestamp = self.config.base_index.as_ref()?.find(entry)?;
         let prev_timestamp_with_margin = prev_timestamp.clone() - margin;
 
@@ -161,6 +161,12 @@ impl Snapshot {
     }
 
     fn copy_and_index_entry(&mut self, entry: &Path) {
+        if self.copy_entry(entry).is_ok() {
+            self.index_entry(self.timestamp.clone(), entry);
+        }
+    }
+
+    fn copy_entry(&mut self, entry: &Path) -> Result<(), ()> {
         let destination = self.files.copy_entry(entry);
         match destination {
             Ok(destination) => {
@@ -169,10 +175,11 @@ impl Snapshot {
                     entry.display(),
                     destination.display()
                 );
-                self.index_entry(self.timestamp.clone(), entry);
+                Ok(())
             }
             Err(e) => {
                 error!("Failed to copy: \"{}\" ({})", entry.display(), e);
+                Err(())
             }
         }
     }

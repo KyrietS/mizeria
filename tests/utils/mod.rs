@@ -7,18 +7,17 @@ use regex::Regex;
 use walkdir::WalkDir;
 
 pub fn generate_snapshot_name() -> String {
-    let local = chrono::offset::Local::now();
+    let local = time::OffsetDateTime::now_local().unwrap();
     format_snapshot_name(local)
 }
 
-pub fn format_snapshot_name(datetime: chrono::DateTime<chrono::Local>) -> String {
-    use chrono::{Datelike, Timelike};
-    let date = datetime.date_naive();
+pub fn format_snapshot_name(datetime: time::OffsetDateTime) -> String {
+    let date = datetime.date();
     let time = datetime.time();
     format!(
         "{}-{:02}-{:02}_{:02}.{:02}",
         date.year(),
-        date.month(),
+        date.month() as u8,
         date.day(),
         time.hour(),
         time.minute()
