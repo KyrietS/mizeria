@@ -27,21 +27,16 @@ impl Snapshot {
         if !root.is_dir() {
             return Err("Folder with backup does not exist or is not accessible".into());
         }
-        let mut timestamp = Timestamp::now();
 
-        let location = loop {
-            let location = root.join(timestamp.to_string());
-            if !location.exists() {
-                fs::create_dir(&location).or(Err("Cannot create directory for a snapshot"))?;
-                break location;
-            }
-            timestamp = timestamp.get_next();
-        };
+        let timestamp = get_timestamp_for_new_snapshot(root);
+
+        let location = root.join(timestamp.to_string());
+        fs::create_dir(&location).or(Err("Cannot create directory for a snapshot"))?;
+
         let index = Index::new(location.join("index.txt"));
         let files = Files::new(location.join("files"));
 
-        debug!("Created empty snapshot: {}", &timestamp.to_string());
-
+        debug!("Created new snapshot: {}", timestamp);
         Ok(Snapshot {
             location,
             timestamp,
@@ -197,6 +192,69 @@ impl Snapshot {
     }
 }
 
+fn get_timestamp_for_new_snapshot(root: &Path) -> Timestamp {
+    let mut current_timestamp = Timestamp::now();
+    debug!("Current timestamp: {}", current_timestamp);
+    let timestamp_of_latest_snapshot = get_latest_snapshot_preview(root).map(|s| s.timestamp);
+
+    // If there is a snapshot from the future, then set current_timestamp to its timestamp + 1 minute.
+    if let Some(timestamp_of_latest_snapshot) = timestamp_of_latest_snapshot {
+        debug!("Latest snapshot: {}", timestamp_of_latest_snapshot);
+        if current_timestamp < timestamp_of_latest_snapshot {
+            current_timestamp = timestamp_of_latest_snapshot.get_next();
+            warn!(
+                "Found snapshot from the future: {}. New snapshot will be created with timestamp: {}",
+                timestamp_of_latest_snapshot,
+                current_timestamp
+            );
+        }
+    }
+
+    loop {
+        let location = root.join(current_timestamp.to_string());
+        if !location.exists() {
+            break;
+        }
+        current_timestamp = current_timestamp.get_next();
+    }
+
+    current_timestamp
+}
+
+fn get_latest_snapshot_preview(root: &Path) -> Option<SnapshotPreview> {
+    let spashot_previews = get_all_snapshot_previews(root);
+    spashot_previews.into_iter().max()
+}
+
+fn get_all_snapshot_previews(root: &Path) -> Vec<SnapshotPreview> {
+    let root_dir_iterator = match root.read_dir() {
+        Ok(iterator) => iterator,
+        Err(e) => {
+            warn!("{}", e);
+            return vec![];
+        }
+    };
+
+    let mut snapshot_previews = vec![];
+    for entry in root_dir_iterator {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
+
+        let preview = match SnapshotPreview::new(entry.path().as_path()) {
+            Some(preview) => preview,
+            None => continue,
+        };
+        snapshot_previews.push(preview);
+    }
+
+    snapshot_previews
+}
+
+// -------------------------------------
+// Integrity check
+// -------------------------------------
 impl Snapshot {
     pub fn check_integrity(location: &Path) -> IntegrityCheckResult {
         if !location.exists() {

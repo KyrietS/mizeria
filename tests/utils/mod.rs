@@ -6,12 +6,17 @@ use std::{
 use regex::Regex;
 use walkdir::WalkDir;
 
-pub fn generate_snapshot_name() -> String {
-    let local = time::OffsetDateTime::now_local().unwrap_or(time::OffsetDateTime::now_utc());
-    format_snapshot_name(local)
+pub fn get_current_time() -> time::PrimitiveDateTime {
+    let time_with_offset =
+        time::OffsetDateTime::now_local().unwrap_or(time::OffsetDateTime::now_utc());
+    time::PrimitiveDateTime::new(time_with_offset.date(), time_with_offset.time())
 }
 
-pub fn format_snapshot_name(datetime: time::OffsetDateTime) -> String {
+pub fn generate_snapshot_name() -> String {
+    format_snapshot_name(get_current_time())
+}
+
+pub fn format_snapshot_name(datetime: time::PrimitiveDateTime) -> String {
     let date = datetime.date();
     let time = datetime.time();
     format!(
@@ -48,7 +53,11 @@ pub fn get_file_by_name(path: &Path, file_name: &str) -> Option<PathBuf> {
 
 pub fn assert_snapshot_exists(snapshot: &Path) {
     // snapshot is a folder
-    assert!(snapshot.is_dir(), "snapshot should be a dir");
+    assert!(
+        snapshot.is_dir(),
+        "snapshot \"{}\" should be a dir",
+        snapshot.display()
+    );
 
     // snapshot has a valid name
     let re = Regex::new(r"\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}").unwrap();
@@ -88,9 +97,17 @@ impl StubSnapshot {
     }
 
     pub fn index_contains(&self, timestamp: &str, path: &Path) -> bool {
+        let path = path.canonicalize().unwrap();
         let entry = format!("{} {}", timestamp, path.to_string_lossy());
         let lines: Vec<&str> = self.index.lines().collect();
-        lines.contains(&entry.as_str())
+        match lines.contains(&entry.as_str()) {
+            true => true,
+            false => {
+                println!("index: {:?}", lines);
+                println!("entry: {:?}", entry);
+                false
+            }
+        }
     }
 
     pub fn index_contains_all(&self, timestamp: &str, paths: &[&Path]) -> bool {

@@ -9,6 +9,9 @@ pub use crate::utils::*;
 
 fn init_logger() {
     let mut builder = env_logger::Builder::new();
+    // builder.filter_level(log::LevelFilter::Trace); // uncomment to see all logs
+    builder.format_timestamp(None);
+    builder.format_module_path(false);
     builder.target(env_logger::Target::Stdout).try_init().ok();
 }
 
@@ -26,7 +29,7 @@ fn create_snapshot_with_args(backup: &Path, files: &[&Path], args: &[&str]) {
     for file in files {
         program_args.push(file.to_string_lossy().to_string());
     }
-    init_logger(); // comment this line to see logs (warnings and errors) in the test output
+    init_logger();
     mizeria::run_program(program_args, &mut std::io::sink()).expect("program failed");
 }
 
@@ -175,24 +178,105 @@ fn create_snapshot_from_two_paths() {
 }
 
 #[test]
-fn create_incremental_snapshot() {
+fn incremental_snapshot_based_on_snapshot_from_the_future() {
     let backup = tempfile::tempdir().unwrap();
     let backup = backup.path();
     let files = tempfile::tempdir().unwrap();
     let files = files.path();
-    let old_file = files.join("old_file.txt");
-    let mod_file = files.join("mod_file.txt");
-    let new_file = files.join("new_file.txt");
 
-    File::create(&old_file).unwrap();
-    File::create(&mod_file).unwrap();
+    // Create snapshot from the future
+    let future_snapshot_datetime = utils::get_current_time() + time::Duration::hours(1);
+
+    let future_snapshot_timestamp = utils::format_snapshot_name(future_snapshot_datetime);
+    let future_snapshot_path = backup.join(&future_snapshot_timestamp);
+    fs::create_dir(&future_snapshot_path).unwrap();
+    fs::create_dir(future_snapshot_path.join("files")).unwrap();
+    File::create(future_snapshot_path.join("index.txt")).unwrap();
+
+    // Create new (current) snapshot.
+    // Its timestamp should be greater than the latest snapshot (from the future) by 1 minute.
+    let new_snapshot_datetime = future_snapshot_datetime + time::Duration::minutes(1);
+    let new_snapshot_timestamp = utils::format_snapshot_name(new_snapshot_datetime);
+    create_snapshot(backup, &[files]);
+
+    // Assert that new snapshot was created
+    let new_snapshot_path = backup.join(&new_snapshot_timestamp);
+    assert_snapshot_exists(new_snapshot_path.as_path());
+}
+
+#[test]
+fn incremental_snapshot_should_copy_new_and_modified_files() {
+    // Previous snapshot is from the past. It has a file with modification time
+    // that is newer than the creation time of this snapshot. This means that
+    // the file was modified after the snapshot was created. Such file should
+    // be copied into the new snapshot.
+    // There is also a file that is not a part of this snapshot. Such file should
+    // also be copied into the new snapshot.
+
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+
+    // Make files to be backed up
+    let files = tempfile::tempdir().unwrap();
+    let files = files.path();
+    let modified_file = files.join("modified_file.txt");
+    let new_file = files.join("new_file.txt");
+    File::create(&modified_file).unwrap();
     File::create(&new_file).unwrap();
 
-    // Snapshot from the future. The idea is to pretend that the previous
-    // snapshot has a newer version of a file compared to modification
-    // time in the filestystem. Program will read this as the latest snapshot
-    // and it will create incremental backup based on this.
-    let future_datetime = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    // Create previous snapshot
+    let past_datetime = utils::get_current_time() - time::Duration::hours(1);
+    let previous_snapshot_timestamp = utils::format_snapshot_name(past_datetime);
+    let previous_snapshot_path = backup.join(&previous_snapshot_timestamp);
+    fs::create_dir(&previous_snapshot_path).unwrap();
+    fs::create_dir(previous_snapshot_path.join("files")).unwrap();
+    let latest_index = File::create(previous_snapshot_path.join("index.txt")).unwrap();
+    write!(
+        &latest_index,
+        "{timestamp} {}\n{timestamp} {}\n",
+        files.canonicalize().unwrap().display(),
+        modified_file.canonicalize().unwrap().display(),
+        timestamp = previous_snapshot_timestamp,
+    )
+    .unwrap();
+
+    // Create new snapshot
+    let snapshot_name = utils::generate_snapshot_name();
+    create_snapshot(backup, &[files]);
+
+    // Assert that new snapshot was created
+    let snapshot = StubSnapshot::open(backup.join(snapshot_name).as_path());
+    let modified_file_in_snapshot =
+        utils::get_file_by_name(snapshot.files.as_path(), "modified_file.txt");
+    let new_file_in_snapshot = utils::get_file_by_name(snapshot.files.as_path(), "new_file.txt");
+
+    assert!(modified_file_in_snapshot.is_some()); // modified_file.txt is copied
+    assert!(new_file_in_snapshot.is_some()); // new_file.txt is copied
+
+    assert_eq!(3, snapshot.index.lines().count());
+    assert!(snapshot.index_contains(snapshot.timestamp.as_str(), files));
+    assert!(snapshot.index_contains(snapshot.timestamp.as_str(), modified_file.as_path()));
+    assert!(snapshot.index_contains(snapshot.timestamp.as_str(), new_file.as_path()));
+}
+
+#[test]
+fn incremental_snapshot_should_not_copy_old_and_unmodified_files() {
+    // Previous snapshot is from the future (now + 1 hour). It has a file with
+    // modification time that is older than the creation time of this snapshot.
+    // This means that the file was not modified after the snapshot was created.
+    // Such file should not be copied into the new snapshot.
+
+    let backup = tempfile::tempdir().unwrap();
+    let backup = backup.path();
+
+    // Make files to be backed up
+    let files = tempfile::tempdir().unwrap();
+    let files = files.path();
+    let old_file = files.join("old_file.txt");
+    File::create(&old_file).unwrap();
+
+    // Create previous snapshot (from the future)
+    let future_datetime = utils::get_current_time() + time::Duration::hours(1);
     let previous_snapshot_timestamp = utils::format_snapshot_name(future_datetime);
     let previous_snapshot_path = backup.join(&previous_snapshot_timestamp);
     fs::create_dir(&previous_snapshot_path).unwrap();
@@ -200,43 +284,26 @@ fn create_incremental_snapshot() {
     let latest_index = File::create(previous_snapshot_path.join("index.txt")).unwrap();
     write!(
         &latest_index,
-        "{future_ts} {}\n{future_ts} {}\n{past_ts} {}\n",
+        "{timestamp} {}\n{timestamp} {}\n",
         files.canonicalize().unwrap().display(),
         old_file.canonicalize().unwrap().display(),
-        mod_file.canonicalize().unwrap().display(),
-        future_ts = previous_snapshot_timestamp,
-        past_ts = utils::generate_snapshot_name()
+        timestamp = previous_snapshot_timestamp,
     )
     .unwrap();
 
-    let snapshot_name = utils::generate_snapshot_name();
+    // Create new snapshot
+    let snapshot_name = utils::format_snapshot_name(future_datetime + time::Duration::minutes(1));
     create_snapshot(backup, &[files]);
-    let snapshot = StubSnapshot::open(backup.join(snapshot_name).as_path());
 
+    // Assert that new snapshot was created
+    let snapshot = StubSnapshot::open(backup.join(snapshot_name).as_path());
     let old_file_in_snapshot = utils::get_file_by_name(snapshot.files.as_path(), "old_file.txt");
-    let new_file_in_snapshot = utils::get_file_by_name(snapshot.files.as_path(), "new_file.txt");
 
     assert!(old_file_in_snapshot.is_none()); // old_file.txt is not copied
-    assert!(new_file_in_snapshot.is_some()); // new_file.txt is copied
 
-    assert_eq!(4, snapshot.index.lines().count());
-
-    assert!(snapshot.index_contains(
-        previous_snapshot_timestamp.as_str(),
-        files.canonicalize().unwrap().as_path()
-    ));
-    assert!(snapshot.index_contains(
-        snapshot.timestamp.as_str(),
-        mod_file.canonicalize().unwrap().as_path()
-    ));
-    assert!(snapshot.index_contains(
-        snapshot.timestamp.as_str(),
-        new_file.canonicalize().unwrap().as_path()
-    ));
-    assert!(snapshot.index_contains(
-        previous_snapshot_timestamp.as_str(),
-        old_file.canonicalize().unwrap().as_path()
-    ));
+    assert_eq!(2, snapshot.index.lines().count());
+    assert!(snapshot.index_contains(previous_snapshot_timestamp.as_str(), files));
+    assert!(snapshot.index_contains(previous_snapshot_timestamp.as_str(), old_file.as_path()));
 }
 
 #[test]
@@ -272,14 +339,8 @@ fn incremental_snapshot_with_no_changes() {
 
     // two entries were indexed
     assert_eq!(2, snapshot.index.lines().count());
-    assert!(snapshot.index_contains(
-        snapshot_timestamp.as_str(),
-        dir_to_backup.canonicalize().unwrap().as_path()
-    ));
-    assert!(snapshot.index_contains(
-        snapshot_timestamp.as_str(),
-        file_to_backup.canonicalize().unwrap().as_path()
-    ));
+    assert!(snapshot.index_contains(snapshot_timestamp.as_str(), dir_to_backup));
+    assert!(snapshot.index_contains(snapshot_timestamp.as_str(), file_to_backup.as_path()));
 }
 
 #[test]
@@ -292,7 +353,7 @@ fn force_full_snapshot() {
 
     File::create(&file_to_backup).unwrap();
 
-    let past_datetime = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
+    let past_datetime = utils::get_current_time() - time::Duration::hours(1);
     let previous_snapshot_timestamp = utils::format_snapshot_name(past_datetime);
     let previous_snapshot_path = backup.join(&previous_snapshot_timestamp);
     fs::create_dir(&previous_snapshot_path).unwrap();
@@ -315,14 +376,8 @@ fn force_full_snapshot() {
 
     // two entries were indexed
     assert_eq!(2, new_snapshot.index.lines().count());
-    assert!(new_snapshot.index_contains(
-        new_snapshot_timestamp.as_str(),
-        dir_to_backup.canonicalize().unwrap().as_path()
-    ));
-    assert!(new_snapshot.index_contains(
-        new_snapshot_timestamp.as_str(),
-        file_to_backup.canonicalize().unwrap().as_path()
-    ));
+    assert!(new_snapshot.index_contains(new_snapshot_timestamp.as_str(), dir_to_backup));
+    assert!(new_snapshot.index_contains(new_snapshot_timestamp.as_str(), file_to_backup.as_path()));
 }
 
 #[test]
@@ -362,18 +417,9 @@ fn create_snapshot_with_symlinks() {
 
     // Assert index.txt
     assert_eq!(3, snapshot.index.lines().count());
-    assert!(snapshot.index_contains(
-        snapshot.timestamp.as_str(),
-        files.canonicalize().unwrap().as_path()
-    ));
-    assert!(snapshot.index_contains(
-        snapshot.timestamp.as_str(),
-        dir_link.canonicalize().unwrap().as_path()
-    ));
-    assert!(snapshot.index_contains(
-        snapshot.timestamp.as_str(),
-        file_link.canonicalize().unwrap().as_path()
-    ));
+    assert!(snapshot.index_contains(snapshot.timestamp.as_str(), files));
+    assert!(snapshot.index_contains(snapshot.timestamp.as_str(), dir_link.as_path()));
+    assert!(snapshot.index_contains(snapshot.timestamp.as_str(), file_link.as_path()));
 
     // Assert copied files (symlinks)
     fn get_link_by_name(path: &Path, file_name: &str) -> Option<PathBuf> {
@@ -425,10 +471,10 @@ fn create_snapshot_with_overlapping_paths() {
     assert!(snapshot.index_contains_all(
         snapshot.timestamp.as_str(),
         &[
-            outer_dir.canonicalize().unwrap().as_path(),
-            outer_file.canonicalize().unwrap().as_path(),
-            inner_dir.canonicalize().unwrap().as_path(),
-            inner_file.canonicalize().unwrap().as_path()
+            outer_dir.as_path(),
+            outer_file.as_path(),
+            inner_dir.as_path(),
+            inner_file.as_path()
         ]
     ));
 
@@ -454,14 +500,8 @@ fn create_snapshot_from_duplicated_and_nonexistent_paths() {
     let snapshot = StubSnapshot::open(snapshot.as_path());
 
     assert_eq!(2, snapshot.index.lines().count());
-    assert!(snapshot.index_contains(
-        snapshot.timestamp.as_str(),
-        path.canonicalize().unwrap().as_path()
-    ));
-    assert!(snapshot.index_contains(
-        snapshot.timestamp.as_str(),
-        file.canonicalize().unwrap().as_path()
-    ));
+    assert!(snapshot.index_contains(snapshot.timestamp.as_str(), path));
+    assert!(snapshot.index_contains(snapshot.timestamp.as_str(), file.as_path()));
 
     assert!(snapshot.find_file("file.txt").is_some());
 }
