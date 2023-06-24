@@ -45,6 +45,11 @@ more detailed help about backup subcommand:
 mizeria backup --help
 ```
 
+## Installation
+```
+cargo install --git https://github.com/KyrietS/mizeria.git
+```
+
 ## Key features
 
 * Single executable file.

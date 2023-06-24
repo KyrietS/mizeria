@@ -40,7 +40,7 @@ fn parse_args(args: &[String]) -> ArgMatches {
         .setting(AppSettings::VersionlessSubcommands)
         .setting(AppSettings::NoBinaryName)
         .subcommand(SubCommand::with_name("backup")
-            .about("created backup of specified files")
+            .about("Make a backup of your files")
             .arg(
                 Arg::with_name("BACKUP")
                     .help("A folder where snapshot will be stored")
@@ -79,7 +79,7 @@ fn parse_args(args: &[String]) -> ArgMatches {
             )
         )
         .subcommand(SubCommand::with_name("snapshot")
-            .about("managing snapshots utilities")
+            .about("View or edit snapshots")
             .arg(
                 Arg::with_name("SNAPSHOT")
                     .help("A snapshot to be selected")
