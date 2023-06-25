@@ -1,15 +1,16 @@
 use std::{
-    borrow::Borrow,
     ffi::OsStr,
     path::{Path, PathBuf},
 };
 
 use log::{debug, warn};
 use snapshot::{Snapshot, SnapshotPreview};
+use snapshot_utils::load_all_snapshot_previews;
 
 use crate::result::IntegrityCheckResult;
 
 mod snapshot;
+mod snapshot_utils;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -20,28 +21,11 @@ pub struct Backup {
 
 impl Backup {
     pub fn open(path: &Path) -> Result<Backup> {
-        let backup_root = path
-            .read_dir()
-            .or(Err("Folder with backup doesn't exist or isn't accessible"))?;
-
-        let mut snapshots = vec![];
-        for entry in backup_root.filter_map(std::result::Result::ok) {
-            let entry_file_name = entry.file_name().to_string_lossy().as_ref().to_owned();
-
-            if Snapshot::has_valid_name(&entry_file_name) {
-                let snapshot = Snapshot::open_preview(entry.path().borrow());
-                match snapshot {
-                    Some(snapshot) => snapshots.push(snapshot),
-                    None => warn!("Failed to load snapshot: {}", entry_file_name),
-                }
-            } else {
-                warn!(
-                    "Found unrecognized entry in backup folder: {}",
-                    entry_file_name
-                );
-            }
+        if !path.exists() {
+            return Err("Folder with backup doesn't exist or isn't accessible".into());
         }
-        snapshots.sort_unstable();
+
+        let snapshots = load_all_snapshot_previews(path);
 
         Ok(Backup {
             location: path.to_owned(),

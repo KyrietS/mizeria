@@ -12,6 +12,7 @@ use std::{fs, io};
 use timestamp::Timestamp;
 use walkdir::WalkDir;
 
+use super::snapshot_utils::get_latest_snapshot_preview;
 use super::IntegrityCheckResult;
 
 pub struct Snapshot {
@@ -63,10 +64,6 @@ impl Snapshot {
             files,
             config: SnapshotConfig::default(),
         })
-    }
-
-    pub fn open_preview(location: &Path) -> Option<SnapshotPreview> {
-        SnapshotPreview::new(location)
     }
 
     pub fn to_preview(&self) -> SnapshotPreview {
@@ -221,37 +218,6 @@ fn get_timestamp_for_new_snapshot(root: &Path) -> Timestamp {
     current_timestamp
 }
 
-fn get_latest_snapshot_preview(root: &Path) -> Option<SnapshotPreview> {
-    let spashot_previews = get_all_snapshot_previews(root);
-    spashot_previews.into_iter().max()
-}
-
-fn get_all_snapshot_previews(root: &Path) -> Vec<SnapshotPreview> {
-    let root_dir_iterator = match root.read_dir() {
-        Ok(iterator) => iterator,
-        Err(e) => {
-            warn!("{}", e);
-            return vec![];
-        }
-    };
-
-    let mut snapshot_previews = vec![];
-    for entry in root_dir_iterator {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => continue,
-        };
-
-        let preview = match SnapshotPreview::new(entry.path().as_path()) {
-            Some(preview) => preview,
-            None => continue,
-        };
-        snapshot_previews.push(preview);
-    }
-
-    snapshot_previews
-}
-
 // -------------------------------------
 // Integrity check
 // -------------------------------------
@@ -329,7 +295,7 @@ impl SnapshotConfig {
         Self { base_index: None }
     }
 }
-
+#[derive(Clone)]
 pub struct SnapshotPreview {
     timestamp: Timestamp,
     index: PathBuf,
