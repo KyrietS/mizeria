@@ -30,6 +30,10 @@ where
 
     let mut snapshots = vec![];
     for entry in backup_root.filter_map(std::result::Result::ok) {
+        if !entry.path().is_dir() {
+            continue;
+        }
+
         let entry_file_name = entry.file_name().to_string_lossy().as_ref().to_owned();
 
         info!("Loading snapshot: {}", entry_file_name);

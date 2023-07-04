@@ -153,7 +153,7 @@ fn handle_manage_snapshot(args: &ArgMatches, writer: Writer) -> Result<()> {
 
     let result = perform_integrity_check(snapshot);
     let result_message = match result {
-        Ok(()) => format!("Snapshot integrity check completed. No problems found."),
+        Ok(()) => "Snapshot integrity check completed. No problems found.".to_string(),
         Err(error) => format!("Snapshot integrity check failed. {}", error),
     };
 
