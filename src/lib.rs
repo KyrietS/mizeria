@@ -166,7 +166,14 @@ fn perform_integrity_check(snapshot_path: PathBuf) -> IntegrityCheckResult {
     if !snapshot_path.exists() {
         return Err(IntegrityCheckError::SnapshotDoesntExist)?;
     }
-    let snapshot_name = snapshot_path
+    let canonicalized_snapshot_path =
+        snapshot_path
+            .canonicalize()
+            .or(Err(IntegrityCheckError::UnexpectedError(format!(
+                "Cannot determine an absolute path for: '{}'",
+                snapshot_path.display()
+            ))))?;
+    let snapshot_name = canonicalized_snapshot_path
         .file_name()
         .ok_or(IntegrityCheckError::SnapshotDoesntExist)?;
     let backup_path = snapshot_path
