@@ -1,15 +1,28 @@
+use log::{info, trace, warn};
 use std::path::Path;
 
-use log::warn;
-
-use super::snapshot::SnapshotPreview;
+use super::snapshot::{Snapshot, SnapshotPreview};
 
 pub fn get_latest_snapshot_preview(root: &Path) -> Option<SnapshotPreview> {
     let snapshot_previews = load_all_snapshot_previews(root);
     snapshot_previews.last().cloned()
 }
 
-pub fn load_all_snapshot_previews(backup_root: &Path) -> Vec<SnapshotPreview> {
+pub fn load_all_snapshot_previews(root: &Path) -> Vec<SnapshotPreview> {
+    trace!("Loading all snapshot previews at: {:?}", root);
+    load_all(root, SnapshotPreview::new)
+}
+
+pub fn load_all_snapshots(root: &Path) -> Vec<Snapshot> {
+    trace!("Loading all snapshots at: {:?}", root);
+    load_all(root, Snapshot::open)
+}
+
+fn load_all<F, T>(backup_root: &Path, get_snapshot: F) -> Vec<T>
+where
+    F: Fn(&Path) -> Option<T>,
+    T: Ord,
+{
     let backup_root = match backup_root.read_dir() {
         Ok(backup_root) => backup_root,
         Err(_) => return vec![],
@@ -19,11 +32,12 @@ pub fn load_all_snapshot_previews(backup_root: &Path) -> Vec<SnapshotPreview> {
     for entry in backup_root.filter_map(std::result::Result::ok) {
         let entry_file_name = entry.file_name().to_string_lossy().as_ref().to_owned();
 
-        let preview = match SnapshotPreview::new(entry.path().as_path()) {
+        info!("Loading snapshot: {}", entry_file_name);
+        let preview = match get_snapshot(entry.path().as_path()) {
             Some(preview) => preview,
             None => {
                 warn!(
-                    "Found unrecognized entry in backup folder: {}",
+                    "Found unrecognized entry in backup folder: \"{}\"",
                     entry_file_name
                 );
                 continue;

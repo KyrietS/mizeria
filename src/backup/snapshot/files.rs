@@ -6,7 +6,7 @@ use std::{fs, io};
 use log::{debug, trace};
 use walkdir::WalkDir;
 
-use crate::result::IntegrityCheckResult;
+use crate::result::{IntegrityCheckError, IntegrityCheckResult};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -34,14 +34,14 @@ impl Files {
         }
 
         if !location.exists() || !location.is_dir() {
-            return IntegrityCheckResult::FilesFolderDoesntExist;
+            return Err(IntegrityCheckError::FilesFolderDoesntExist);
         }
 
         debug!("Traversing snapshot files has started");
         for entry in WalkDir::new(location).min_depth(1).follow_links(false) {
             let entry = match entry {
                 Ok(entry) => entry,
-                Err(e) => return IntegrityCheckResult::UnexpectedError(format!("{}", e)),
+                Err(e) => return Err(IntegrityCheckError::UnexpectedError(format!("{}", e))),
             };
             trace!("Found file: {}", entry.path().display());
 
@@ -54,16 +54,20 @@ impl Files {
             // not explicitly indexed.
             let is_subpath_of_another_entry = index_map.iter().any(|(e, _)| e.starts_with(entry));
             if !entry_was_indexed && !is_subpath_of_another_entry {
-                return IntegrityCheckResult::EntryExistsButNotIndexed(entry.to_owned());
+                return Err(IntegrityCheckError::EntryExistsButNotIndexed(
+                    entry.to_owned(),
+                ));
             }
         }
 
         // All remaining elements indicate entries that were not found.
         if let Some((_, index_path)) = index_map.iter().next() {
-            return IntegrityCheckResult::EntryIndexedButNotExists(index_path.to_path_buf());
+            return Err(IntegrityCheckError::EntryIndexedButNotExists(
+                index_path.to_path_buf(),
+            ));
         }
 
-        IntegrityCheckResult::Success
+        Ok(())
     }
 
     pub fn copy_entry(&self, entry: &Path) -> Result<PathBuf> {

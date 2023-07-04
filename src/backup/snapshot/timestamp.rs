@@ -1,6 +1,6 @@
 use std::{fmt::Display, ops::Sub, time::SystemTime};
 
-use log::warn;
+use log::trace;
 use time::format_description::FormatItem;
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Clone, Debug)]
@@ -18,7 +18,7 @@ impl Timestamp {
         match inner {
             Ok(inner) => Some(Self { inner }),
             Err(e) => {
-                warn!("Failed to parse \"{}\" as Timestamp: {}", str, e);
+                trace!("Failed to parse \"{}\" as Timestamp: {}", str, e);
                 None
             }
         }
@@ -33,6 +33,11 @@ impl Timestamp {
         Self {
             inner: next_date_time,
         }
+    }
+
+    pub fn get_time_elapsed(&self) -> time::Duration {
+        let now = Self::now();
+        now.inner - self.inner
     }
 
     fn get_format<'a>() -> Vec<FormatItem<'a>> {
@@ -150,5 +155,18 @@ mod tests {
 
         let ts_next = ts_next.get_next();
         assert_eq!(ts_next, Timestamp::parse_from("2021-07-15_18.36").unwrap());
+    }
+
+    #[test]
+    fn timestamp_from_the_future() {
+        let system_time_now = std::time::SystemTime::now();
+        let system_time_future = system_time_now + std::time::Duration::from_secs(120);
+        let ts_future = Timestamp::from(system_time_future);
+
+        assert!(ts_future > Timestamp::now());
+
+        let age = ts_future.get_time_elapsed();
+        assert!(age.is_negative());
+        assert!(age.whole_seconds() >= -120);
     }
 }

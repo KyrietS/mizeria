@@ -1,10 +1,8 @@
 use std::{fmt::Display, path::PathBuf};
 
-// TODO: Change this to 'IntegrityCheckError' and remove 'Success' from the list.
-//       Also, change function returning values from 'IntegrityCheckResult' to
-//       Result<(), IntegrityCheckResult>
-pub enum IntegrityCheckResult {
-    Success,
+pub type IntegrityCheckResult = std::result::Result<(), IntegrityCheckError>;
+
+pub enum IntegrityCheckError {
     SnapshotDoesntExist,
     SnapshotNameHasInvalidTimestamp(String),
     IndexFileDoesntExist,
@@ -16,38 +14,37 @@ pub enum IntegrityCheckResult {
     UnexpectedError(String),
 }
 
-impl IntegrityCheckResult {
+impl IntegrityCheckError {
     pub fn get_message(&self) -> String {
         match self {
-            Self::Success => "No problems found.".into(),
             Self::SnapshotDoesntExist => "Snapshot doesn't exist.".into(),
             Self::SnapshotNameHasInvalidTimestamp(name) => {
                 format!("Snapshot's name '{}' is not a correct timestamp.", name)
             }
             Self::IndexFileDoesntExist => "Files index.txt is missing.".into(),
             Self::FilesFolderDoesntExist => "Folder files is missing.".into(),
-            IntegrityCheckResult::IndexFileContainsInvalidTimestampInLine(line) => {
+            IntegrityCheckError::IndexFileContainsInvalidTimestampInLine(line) => {
                 format!("Invalid timestamp in line {} of index.txt.", line)
             }
-            IntegrityCheckResult::IndexFileContainsInvalidPathInLine(line) => {
+            IntegrityCheckError::IndexFileContainsInvalidPathInLine(line) => {
                 format!("Invalid path in line {} of index.txt.", line)
             }
-            IntegrityCheckResult::EntryIndexedButNotExists(path) => format!(
+            IntegrityCheckError::EntryIndexedButNotExists(path) => format!(
                 "Entry '{}' is indexed, but is missing in snapshot.",
                 path.display()
             ),
-            IntegrityCheckResult::EntryExistsButNotIndexed(path) => format!(
+            IntegrityCheckError::EntryExistsButNotIndexed(path) => format!(
                 "Entry '{}' is present in snapshot, but is not indexed.",
                 path.display()
             ),
-            IntegrityCheckResult::UnexpectedError(message) => {
+            IntegrityCheckError::UnexpectedError(message) => {
                 format!("Unexpected error occured: {}", message)
             }
         }
     }
 }
 
-impl Display for IntegrityCheckResult {
+impl Display for IntegrityCheckError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.get_message())
     }

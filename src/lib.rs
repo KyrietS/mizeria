@@ -2,17 +2,20 @@ use backup::Backup;
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use env_logger::{Builder, WriteStyle};
 use log::LevelFilter;
-use result::IntegrityCheckResult;
+use result::{IntegrityCheckError, IntegrityCheckResult};
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::slice::Iter;
 
 mod backup;
 pub mod result;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type Writer<'a> = &'a mut dyn Write;
 
-pub fn run_program<C: IntoIterator>(args: C, writer: &mut impl Write) -> Result<()>
+pub fn run_program<C: IntoIterator>(args: C, writer: Writer) -> Result<()>
 where
     C::Item: AsRef<OsStr>,
 {
@@ -25,12 +28,25 @@ where
     execute_subcommand(matches, writer)
 }
 
-fn execute_subcommand(matches: ArgMatches, writer: &mut impl Write) -> Result<()> {
+fn execute_subcommand(matches: ArgMatches, writer: Writer) -> Result<()> {
     return match matches.subcommand() {
         ("backup", Some(args)) => handle_backup(args, writer),
+        ("list", Some(args)) => handle_list_snapshots(args, writer),
         ("snapshot", Some(args)) => handle_manage_snapshot(args, writer),
         _ => Ok(()),
     };
+}
+
+fn get_verbosity_arg<'a>() -> Arg<'a, 'a> {
+    Arg::with_name("v")
+        .short("v")
+        .multiple(true)
+        .help("Sets the level of verbosity")
+        .long_help(concat!(
+            "Use -v to turn on debug logs showing steps in producing a backup.\n",
+            "Use -vv to see debug and trace logs that show every file being indexed and copied.\n",
+            "By default only warning and error logs are printed."
+        ))
 }
 
 fn parse_args(args: &[String]) -> ArgMatches {
@@ -66,16 +82,23 @@ fn parse_args(args: &[String]) -> ArgMatches {
                         "present in other snapshots."
                     ))
             )
+            .arg(get_verbosity_arg())
+        )
+        .subcommand(SubCommand::with_name("list")
+            .about("List all snapshots")
+            .visible_alias("ls")
+            .arg(get_verbosity_arg())
             .arg(
-                Arg::with_name("v")
-                .short("v")
-                .multiple(true)
-                .help("Sets the level of verbosity")
-                .long_help(concat!(
-                    "Use -v to turn on debug logs showing steps in producing a backup.\n",
-                    "Use -vv to see debug and trace logs that show every file being indexed and copied.\n",
-                    "By default only warning and error logs are printed."
-                ))
+                Arg::with_name("BACKUP")
+                    .help("A folder where snapshots are stored. Defaults to current directory")
+                    .required(false)
+                    .index(1),
+            )
+            .arg(
+                Arg::with_name("short")
+                    .long("short")
+                    .short("s")
+                    .help("Print only basic information about snapshots in a short format")
             )
         )
         .subcommand(SubCommand::with_name("snapshot")
@@ -86,32 +109,52 @@ fn parse_args(args: &[String]) -> ArgMatches {
                     .required(true)
                     .index(1)
             )
-            .arg(Arg::with_name("v")
-            .short("v")
-            .multiple(true)
-            .help("Sets the level of verbosity")
-            .long_help(concat!(
-                "Use -v to turn on debug logs showing internal steps during integrity check.\n",
-                "Use -vv to see debug and trace logs that show every file being verified.\n",
-                "By default only warning and error logs are printed."
-            )))
+            .arg(get_verbosity_arg())
         )
         .get_matches_from(args)
 }
 
-fn handle_manage_snapshot(args: &ArgMatches, writer: &mut impl Write) -> Result<()> {
+fn print_snapshots(writer: Writer, snapshots: Iter<'_, impl Display>) -> Result<()> {
+    writeln!(writer, "Available snapshots:")?;
+    for (index, snapshot) in snapshots.rev().enumerate() {
+        writeln!(writer, "{}. {}", index + 1, snapshot)?;
+    }
+    Ok(())
+}
+
+fn list_all_snapshots(writer: Writer, path: &Path, short_format: bool) -> Result<()> {
+    if !path.exists() {
+        return Err("Folder with backup doesn't exist or isn't accessible".into());
+    }
+
+    if short_format {
+        let previews = Backup::get_all_snapshot_previews(path);
+        print_snapshots(writer, previews.iter())?;
+    } else {
+        let snapshots = Backup::get_all_snapshots(path);
+        print_snapshots(writer, snapshots.iter())?;
+    };
+
+    Ok(())
+}
+
+fn handle_list_snapshots(args: &ArgMatches, writer: Writer) -> Result<()> {
+    set_verbosity(args);
+    let short_format = args.is_present("short");
+    let path = args.value_of("BACKUP").unwrap_or(".");
+    let path = Path::new(path);
+    list_all_snapshots(writer, path, short_format)
+}
+
+fn handle_manage_snapshot(args: &ArgMatches, writer: Writer) -> Result<()> {
+    set_verbosity(args);
     let snapshot = args.value_of("SNAPSHOT").unwrap();
     let snapshot = PathBuf::from(snapshot);
-    let snapshot_name = snapshot.file_name().ok_or("cannot open snapshot")?;
-    let backup_path = snapshot.parent().ok_or("cannot open backup")?;
-    set_verbosity(args);
 
-    let backup = Backup::open(backup_path)?;
-    let result = backup.check_integrity(snapshot_name);
-
+    let result = perform_integrity_check(snapshot);
     let result_message = match result {
-        IntegrityCheckResult::Success => format!("Snapshot integrity check completed. {}", result),
-        _ => format!("Snapshot integrity check failed. {}", result),
+        Ok(()) => format!("Snapshot integrity check completed. No problems found."),
+        Err(error) => format!("Snapshot integrity check failed. {}", error),
     };
 
     writeln!(writer, "{}", result_message)?;
@@ -119,7 +162,26 @@ fn handle_manage_snapshot(args: &ArgMatches, writer: &mut impl Write) -> Result<
     Ok(())
 }
 
-fn handle_backup(args: &ArgMatches, writer: &mut impl Write) -> Result<()> {
+fn perform_integrity_check(snapshot_path: PathBuf) -> IntegrityCheckResult {
+    if !snapshot_path.exists() {
+        return Err(IntegrityCheckError::SnapshotDoesntExist)?;
+    }
+    let snapshot_name = snapshot_path
+        .file_name()
+        .ok_or(IntegrityCheckError::SnapshotDoesntExist)?;
+    let backup_path = snapshot_path
+        .parent()
+        .ok_or(IntegrityCheckError::UnexpectedError(
+            "Cannot open backup folder".into(),
+        ))?;
+    let backup = match Backup::open(backup_path) {
+        Ok(backup) => backup,
+        Err(error) => Err(IntegrityCheckError::UnexpectedError(format!("{}", error)))?,
+    };
+    backup.check_integrity(snapshot_name)
+}
+
+fn handle_backup(args: &ArgMatches, writer: Writer) -> Result<()> {
     let backup = args.value_of("BACKUP").unwrap();
     let files: Vec<PathBuf> = args
         .values_of("INPUT")

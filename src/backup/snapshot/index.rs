@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use log::{debug, trace};
 
-use crate::result::IntegrityCheckResult;
+use crate::result::{IntegrityCheckError, IntegrityCheckResult};
 
 use super::timestamp::Timestamp;
 
@@ -58,40 +58,39 @@ impl Index {
 
     pub fn check_integrity(location: PathBuf) -> IntegrityCheckResult {
         if !location.exists() {
-            return IntegrityCheckResult::IndexFileDoesntExist;
+            return Err(IntegrityCheckError::IndexFileDoesntExist);
         }
 
-        let file = match File::open(&location) {
-            Ok(file) => file,
-            Err(_) => return IntegrityCheckResult::UnexpectedError("Cannot open index.txt".into()),
-        };
+        let file = File::open(&location).or(Err(IntegrityCheckError::UnexpectedError(
+            "Cannot open index.txt".into(),
+        )))?;
         let file = BufReader::new(&file);
 
         debug!("Traversing index has started");
         for (line_num, read_line) in file.lines().enumerate() {
             let line_num = line_num + 1;
-            let line = match read_line {
-                Ok(line) => line,
-                Err(_) => {
-                    return IntegrityCheckResult::UnexpectedError(
-                        "Error while reading index.txt".into(),
-                    )
-                }
-            };
+            let line = read_line.or(Err(IntegrityCheckError::UnexpectedError(
+                "Error while reading index.txt".into(),
+            )))?;
+
             trace!("Line {}: {}", line_num, line);
             match IndexEntry::from_line(line.borrow()) {
                 Ok(_) => (),
                 Err(IndexEntryParseError::SyntaxError)
                 | Err(IndexEntryParseError::InvalidTimestamp) => {
-                    return IntegrityCheckResult::IndexFileContainsInvalidTimestampInLine(line_num)
+                    return Err(
+                        IntegrityCheckError::IndexFileContainsInvalidTimestampInLine(line_num),
+                    )
                 }
                 Err(IndexEntryParseError::InvalidPath) => {
-                    return IntegrityCheckResult::IndexFileContainsInvalidPathInLine(line_num)
+                    return Err(IntegrityCheckError::IndexFileContainsInvalidPathInLine(
+                        line_num,
+                    ))
                 }
             }
         }
 
-        IntegrityCheckResult::Success
+        Ok(())
     }
 }
 

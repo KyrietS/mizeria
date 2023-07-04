@@ -6,14 +6,16 @@ use files::Files;
 use index::{Index, IndexPreview};
 use log::{debug, error, info, trace, warn};
 use std::cmp::Ordering;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 use timestamp::Timestamp;
 use walkdir::WalkDir;
 
+use crate::result::IntegrityCheckResult;
+
 use super::snapshot_utils::get_latest_snapshot_preview;
-use super::IntegrityCheckResult;
+use super::IntegrityCheckError;
 
 pub struct Snapshot {
     location: PathBuf,
@@ -47,13 +49,23 @@ impl Snapshot {
         })
     }
 
-    #[allow(dead_code)] // will be used in the future to extract metadate of a snapshot
-    pub fn open(location: &Path) -> Result<Snapshot, String> {
+    pub fn open(location: &Path) -> Option<Snapshot> {
+        match Self::try_to_open(location) {
+            Ok(snapshot) => Some(snapshot),
+            Err(e) => {
+                warn!("Failed to open snapshot: {}", e);
+                None
+            }
+        }
+    }
+
+    fn try_to_open(location: &Path) -> Result<Snapshot, String> {
         let snapshot_name = location
             .file_name()
             .ok_or("Invalid snapshot name")?
             .to_string_lossy();
-        let timestamp = Timestamp::parse_from(&snapshot_name).ok_or("Failed to parse timestamp")?;
+        let timestamp = Timestamp::parse_from(&snapshot_name)
+            .ok_or(format!("Invalid snapshot name: \"{}\"", snapshot_name))?;
         let index = Index::open(location.join("index.txt"))?;
         let files = Files::new(location.join("files"));
 
@@ -224,25 +236,29 @@ fn get_timestamp_for_new_snapshot(root: &Path) -> Timestamp {
 impl Snapshot {
     pub fn check_integrity(location: &Path) -> IntegrityCheckResult {
         if !location.exists() {
-            return IntegrityCheckResult::SnapshotDoesntExist;
+            return Err(IntegrityCheckError::SnapshotDoesntExist);
         }
         let snapshot_name = match location.file_name() {
             Some(name) => name.to_string_lossy(),
-            None => return IntegrityCheckResult::SnapshotNameHasInvalidTimestamp("..".into()),
+            None => {
+                return Err(IntegrityCheckError::SnapshotNameHasInvalidTimestamp(
+                    "..".into(),
+                ))
+            }
         };
         if !Snapshot::has_valid_name(&snapshot_name) {
-            return IntegrityCheckResult::SnapshotNameHasInvalidTimestamp(snapshot_name.into());
+            return Err(IntegrityCheckError::SnapshotNameHasInvalidTimestamp(
+                snapshot_name.into(),
+            ));
         }
 
-        let index_integrity_result = Index::check_integrity(location.join("index.txt"));
-        match index_integrity_result {
-            IntegrityCheckResult::Success => info!("Index integrity check passed"),
-            _ => return index_integrity_result,
-        }
+        Index::check_integrity(location.join("index.txt"))?;
+        info!("Index integrity check passed");
 
+        // First open Index and then check_integrity.
         let index = match Index::open(location.join("index.txt")) {
             Ok(index) => index,
-            Err(err) => return IntegrityCheckResult::UnexpectedError(err),
+            Err(err) => return Err(IntegrityCheckError::UnexpectedError(err)),
         };
 
         warn!("This is just a shallow integrity check of one snapshot!");
@@ -253,14 +269,19 @@ impl Snapshot {
             .filter(|e| e.timestamp.to_string() == snapshot_name)
             .map(|e| &e.path);
 
-        let files_integrity_result =
-            Files::check_integrity(location.join("files"), entries_from_this_snapshot);
-        match files_integrity_result {
-            IntegrityCheckResult::Success => info!("Files integrity check passed"),
-            _ => return files_integrity_result,
-        }
+        Files::check_integrity(location.join("files"), entries_from_this_snapshot)?;
+        info!("Files integrity check passed");
 
-        IntegrityCheckResult::Success
+        Ok(())
+    }
+}
+
+impl Display for Snapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Snapshot: {}", self.timestamp)?;
+        writeln!(f, "  Index: ???")?;
+        writeln!(f, "  Files: ???")?;
+        Ok(())
     }
 }
 
@@ -317,6 +338,17 @@ impl SnapshotPreview {
             index,
             files,
         })
+    }
+}
+
+impl Display for SnapshotPreview {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}  ({} days ago)",
+            self.timestamp,
+            self.timestamp.get_time_elapsed().whole_days()
+        )
     }
 }
 

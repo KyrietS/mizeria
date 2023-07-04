@@ -1,13 +1,12 @@
+use log::{debug, warn};
+use snapshot::{Snapshot, SnapshotPreview};
+use snapshot_utils::{load_all_snapshot_previews, load_all_snapshots};
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
 };
 
-use log::{debug, warn};
-use snapshot::{Snapshot, SnapshotPreview};
-use snapshot_utils::load_all_snapshot_previews;
-
-use crate::result::IntegrityCheckResult;
+use crate::result::{IntegrityCheckError, IntegrityCheckResult};
 
 mod snapshot;
 mod snapshot_utils;
@@ -31,6 +30,14 @@ impl Backup {
             location: path.to_owned(),
             snapshots,
         })
+    }
+
+    pub fn get_all_snapshots(path: &Path) -> Vec<Snapshot> {
+        load_all_snapshots(path)
+    }
+
+    pub fn get_all_snapshot_previews(path: &Path) -> Vec<SnapshotPreview> {
+        load_all_snapshot_previews(path)
     }
 
     pub fn check_integrity(&self, snapshot_name: &OsStr) -> IntegrityCheckResult {

@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 
-use mizeria::result::IntegrityCheckResult;
+use mizeria::result::IntegrityCheckError;
 
 struct ProgramOutput {
     buffer: Vec<u8>,
@@ -48,11 +48,22 @@ fn check_snapshot_integrity_with_args(snapshot_path: &Path, args: &[&str]) -> Pr
     init_logger();
 
     let mut output = ProgramOutput::new();
-    mizeria::run_program(program_args, &mut output).expect("program failed");
+    let _ = mizeria::run_program(program_args, &mut output);
     return output;
 }
 
-fn expect_result(output: ProgramOutput, result: IntegrityCheckResult) {
+fn expect_integrity_success(output: ProgramOutput) {
+    const INTEGRITY_CHECK_SUCCESS: &str = "No problems found.";
+    let output = output.to_string();
+    assert!(
+        output.contains(INTEGRITY_CHECK_SUCCESS),
+        "Expected result message: '{}' not found in: '{}'",
+        INTEGRITY_CHECK_SUCCESS,
+        output
+    );
+}
+
+fn expect_integrity_error(output: ProgramOutput, result: IntegrityCheckError) {
     let output = output.to_string();
     let expected_msg = result.to_string();
     assert!(
@@ -76,7 +87,7 @@ fn check_integrity_for_empty_snapshot() {
     File::create(&index).unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(output, IntegrityCheckResult::Success);
+    expect_integrity_success(output);
 }
 
 #[test]
@@ -92,9 +103,9 @@ fn check_integrity_for_snapshot_with_invalid_name() {
     File::create(&index).unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(
+    expect_integrity_error(
         output,
-        IntegrityCheckResult::SnapshotNameHasInvalidTimestamp(String::from(snapshot_name)),
+        IntegrityCheckError::SnapshotNameHasInvalidTimestamp(String::from(snapshot_name)),
     );
 }
 
@@ -109,7 +120,7 @@ fn check_integrity_for_snapshot_without_index() {
     fs::create_dir(files).unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(output, IntegrityCheckResult::IndexFileDoesntExist);
+    expect_integrity_error(output, IntegrityCheckError::IndexFileDoesntExist);
 }
 
 #[test]
@@ -123,7 +134,7 @@ fn check_integrity_for_snapshot_without_files_folder() {
     File::create(&index).unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(output, IntegrityCheckResult::FilesFolderDoesntExist);
+    expect_integrity_error(output, IntegrityCheckError::FilesFolderDoesntExist);
 }
 
 #[test]
@@ -142,9 +153,9 @@ fn check_integrity_for_snapshot_with_file_present_but_not_indexed() {
     File::create(&my_file).unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(
+    expect_integrity_error(
         output,
-        IntegrityCheckResult::EntryExistsButNotIndexed(my_file),
+        IntegrityCheckError::EntryExistsButNotIndexed(my_file),
     );
 }
 
@@ -164,9 +175,9 @@ fn check_integrity_for_snapshot_with_folder_present_but_not_indexed() {
     fs::create_dir(&my_file).unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(
+    expect_integrity_error(
         output,
-        IntegrityCheckResult::EntryExistsButNotIndexed(my_file),
+        IntegrityCheckError::EntryExistsButNotIndexed(my_file),
     );
 }
 
@@ -192,9 +203,9 @@ fn check_integrity_for_snapshot_with_file_indexed_but_not_present() {
     fs::create_dir(&files).unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(
+    expect_integrity_error(
         output,
-        IntegrityCheckResult::EntryIndexedButNotExists(missing_file_path),
+        IntegrityCheckError::EntryIndexedButNotExists(missing_file_path),
     );
 }
 
@@ -225,7 +236,7 @@ fn check_integrity_for_snapshot_with_file_indexed_in_another_snapshot_and_not_pr
     // So mizeria won't be looking at entries from another
     // snapshots. In the future I introduce a flag to check
     // all snapshots recursively and this test should fail.
-    expect_result(output, IntegrityCheckResult::Success);
+    expect_integrity_success(output);
 }
 
 #[test]
@@ -244,9 +255,9 @@ fn check_integrity_for_snapshot_with_invalid_index() {
         .unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(
+    expect_integrity_error(
         output,
-        IntegrityCheckResult::IndexFileContainsInvalidTimestampInLine(1),
+        IntegrityCheckError::IndexFileContainsInvalidTimestampInLine(1),
     );
 }
 
@@ -273,9 +284,9 @@ fn check_integrity_for_snapshot_with_invalid_index_timestamp() {
         .unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(
+    expect_integrity_error(
         output,
-        IntegrityCheckResult::IndexFileContainsInvalidTimestampInLine(2),
+        IntegrityCheckError::IndexFileContainsInvalidTimestampInLine(2),
     );
 }
 
@@ -302,9 +313,9 @@ fn check_integrity_for_snapshot_with_invalid_index_path() {
         .unwrap();
 
     let output = check_snapshot_integrity(snapshot.as_path());
-    expect_result(
+    expect_integrity_error(
         output,
-        IntegrityCheckResult::IndexFileContainsInvalidPathInLine(2),
+        IntegrityCheckError::IndexFileContainsInvalidPathInLine(2),
     );
 }
 
@@ -316,7 +327,7 @@ fn check_integrity_for_snapshot_created_with_command() {
     File::create(files.path().join("dummy_file.txt")).unwrap();
 
     let output = check_snapshot_integrity(backup.path().join("2021-07-14_18.34").as_path());
-    expect_result(output, IntegrityCheckResult::SnapshotDoesntExist);
+    expect_integrity_error(output, IntegrityCheckError::SnapshotDoesntExist);
 
     let args = vec![
         String::from("backup"),
@@ -333,7 +344,7 @@ fn check_integrity_for_snapshot_created_with_command() {
     assert_eq!(snapshots.len(), 2);
 
     let output = check_snapshot_integrity(&snapshots[0].path());
-    expect_result(output, IntegrityCheckResult::Success);
+    expect_integrity_success(output);
     let output = check_snapshot_integrity(&snapshots[1].path());
-    expect_result(output, IntegrityCheckResult::Success);
+    expect_integrity_success(output);
 }
