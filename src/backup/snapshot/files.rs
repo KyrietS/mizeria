@@ -12,6 +12,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Files {
     root: PathBuf,
+    size: u64, // in bytes
 }
 
 impl Files {
@@ -19,7 +20,41 @@ impl Files {
         if !location.exists() {
             fs::create_dir(&location).expect("Error creating files dir");
         }
-        Files { root: location }
+        Files {
+            root: location,
+            size: 0,
+        }
+    }
+
+    pub fn open(location: PathBuf) -> std::result::Result<Self, String> {
+        if !location.exists() {
+            return Err("Folder with files doesn't exist or isn't accessible".into());
+        }
+        let size = Self::get_size(location.as_path());
+        Ok(Files {
+            root: location,
+            size,
+        })
+    }
+
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
+    fn get_size(location: &Path) -> u64 {
+        let mut size = 0;
+        for entry in WalkDir::new(location).min_depth(1).follow_links(false) {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            let entry_meta = match entry.metadata() {
+                Ok(meta) => meta,
+                Err(_) => continue,
+            };
+            size += entry_meta.len();
+        }
+        size
     }
 
     pub fn check_integrity<'a>(
@@ -70,11 +105,11 @@ impl Files {
         Ok(())
     }
 
-    pub fn copy_entry(&self, entry: &Path) -> Result<PathBuf> {
+    pub fn copy_entry(&mut self, entry: &Path) -> Result<PathBuf> {
         let entry_meta = entry.symlink_metadata()?;
         let entry_type = entry_meta.file_type();
 
-        return if entry_type.is_dir() {
+        let result = if entry_type.is_dir() {
             self.copy_dir_entry(entry)
         } else if entry_type.is_file() {
             self.copy_file_entry(entry)
@@ -90,6 +125,12 @@ impl Files {
         } else {
             Err(format!("Unknown entry type: {}", &entry.display()).into())
         };
+
+        if result.is_ok() {
+            self.size += entry_meta.len();
+        }
+
+        result
     }
 
     fn copy_dir_entry(&self, dir_to_copy: &Path) -> Result<PathBuf> {
@@ -178,8 +219,9 @@ mod tests {
     fn copy_files_from_invalid_path() {
         let tempdir = tempfile::tempdir().unwrap();
         let invalid_file = tempdir.path().join("foobar");
-        let files = Files {
+        let mut files = Files {
             root: PathBuf::new(),
+            size: 0,
         };
 
         let result = files.copy_entry(&invalid_file);

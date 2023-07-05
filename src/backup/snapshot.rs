@@ -67,7 +67,7 @@ impl Snapshot {
         let timestamp = Timestamp::parse_from(&snapshot_name)
             .ok_or(format!("Invalid snapshot name: \"{}\"", snapshot_name))?;
         let index = Index::open(location.join("index.txt"))?;
-        let files = Files::new(location.join("files"));
+        let files = Files::open(location.join("files"))?;
 
         Ok(Snapshot {
             location: location.to_owned(),
@@ -279,8 +279,8 @@ impl Snapshot {
 impl Display for Snapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Snapshot: {}", self.timestamp)?;
-        writeln!(f, "  Index: ???")?;
-        writeln!(f, "  Files: ???")?;
+        writeln!(f, "  Index: {} entries", self.index.entries.len())?;
+        writeln!(f, "  Files: {} bytes", self.files.size())?;
         Ok(())
     }
 }
