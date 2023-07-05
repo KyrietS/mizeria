@@ -181,6 +181,13 @@ fn perform_integrity_check(snapshot_path: PathBuf) -> IntegrityCheckResult {
         .ok_or(IntegrityCheckError::UnexpectedError(
             "Cannot open backup folder".into(),
         ))?;
+
+    let backup_path = if backup_path == Path::new("") {
+        Path::new(".")
+    } else {
+        backup_path
+    };
+
     let backup = match Backup::open(backup_path) {
         Ok(backup) => backup,
         Err(error) => Err(IntegrityCheckError::UnexpectedError(format!("{}", error)))?,
