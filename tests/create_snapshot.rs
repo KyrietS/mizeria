@@ -279,8 +279,16 @@ fn incremental_snapshot_should_not_copy_old_and_unmodified_files() {
     let future_datetime = utils::get_current_time() + time::Duration::hours(1);
     let previous_snapshot_timestamp = utils::format_snapshot_name(future_datetime);
     let previous_snapshot_path = backup.join(&previous_snapshot_timestamp);
-    fs::create_dir(&previous_snapshot_path).unwrap();
-    fs::create_dir(previous_snapshot_path.join("files")).unwrap();
+
+    let snapshot_name = utils::generate_snapshot_name();
+    create_snapshot(backup, &[files]);
+    // Rename snapshot to make it look like it was created in the future
+    std::fs::rename(
+        backup.join(snapshot_name).as_path(),
+        previous_snapshot_path.as_path(),
+    )
+    .expect("failed to rename snapshot");
+    // Overwrite index.txt and use timestamps from the future
     let latest_index = File::create(previous_snapshot_path.join("index.txt")).unwrap();
     write!(
         &latest_index,

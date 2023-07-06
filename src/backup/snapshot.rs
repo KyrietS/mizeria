@@ -88,16 +88,7 @@ impl Snapshot {
 
     pub fn set_base_snapshot(&mut self, base_snapshot: Option<&SnapshotPreview>) {
         let base_index = match base_snapshot {
-            Some(snapshot) => {
-                let index_preview = IndexPreview::open(snapshot.index.as_path());
-                match index_preview {
-                    Ok(index_preview) => Some(index_preview),
-                    Err(e) => {
-                        warn!("Failed to load base index with cause: {}", e);
-                        None
-                    }
-                }
-            }
+            Some(snapshot) => Self::get_base_snapshot_index(snapshot),
             None => None,
         };
 
@@ -108,6 +99,26 @@ impl Snapshot {
         debug!("Base snapshot set to: {}", base_snapshot_str);
 
         self.config.base_index = base_index;
+    }
+
+    fn get_base_snapshot_index(base_snapshot: &SnapshotPreview) -> Option<IndexPreview> {
+        match Snapshot::check_integrity(base_snapshot.location.as_path()) {
+            Ok(_) => debug!("Base snapshot integrity check passed"),
+            Err(e) => {
+                error!("Base snapshot integrity check failed: {}", e);
+                info!("Incremental backup will not be performed");
+                return None;
+            }
+        }
+
+        let index_preview = IndexPreview::open(base_snapshot.index.as_path());
+        match index_preview {
+            Ok(index_preview) => Some(index_preview),
+            Err(e) => {
+                warn!("Failed to load base index with cause: {}", e);
+                None
+            }
+        }
     }
 
     pub fn name(&self) -> String {
@@ -318,6 +329,7 @@ impl SnapshotConfig {
 }
 #[derive(Clone)]
 pub struct SnapshotPreview {
+    location: PathBuf,
     timestamp: Timestamp,
     index: PathBuf,
     #[allow(dead_code)] // will be used in the future
@@ -334,6 +346,7 @@ impl SnapshotPreview {
         files.exists().then_some(())?;
 
         Some(SnapshotPreview {
+            location: location.to_owned(),
             timestamp,
             index,
             files,

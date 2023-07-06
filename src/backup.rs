@@ -48,6 +48,9 @@ impl Backup {
 
     pub fn add_snapshot(&mut self, files: &[PathBuf], incremental: bool) -> Result<String> {
         debug!("Started backup process");
+        // TODO: pass self.latest_snapshot() to Snapshot::create
+        //       because currently snapshot has to load all snapshots
+        //       to find the latest one.
         let mut new_snapshot = Snapshot::create(self.location.as_path())?;
 
         self.set_incremental_snapshot(&mut new_snapshot, incremental);
