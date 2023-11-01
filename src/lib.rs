@@ -164,7 +164,7 @@ fn handle_manage_snapshot(args: &ArgMatches, writer: Writer) -> Result<()> {
 
 fn perform_integrity_check(snapshot_path: PathBuf) -> IntegrityCheckResult {
     if !snapshot_path.exists() {
-        return Err(IntegrityCheckError::SnapshotDoesntExist)?;
+        Err(IntegrityCheckError::SnapshotDoesntExist)?;
     }
     let canonicalized_snapshot_path =
         snapshot_path

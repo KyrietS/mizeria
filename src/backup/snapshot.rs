@@ -303,7 +303,7 @@ impl PartialEq for Snapshot {
 }
 impl PartialOrd for Snapshot {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.timestamp.partial_cmp(&other.timestamp)
+        Some(self.cmp(other))
     }
 }
 impl Eq for Snapshot {}
@@ -372,7 +372,7 @@ impl PartialEq for SnapshotPreview {
 }
 impl PartialOrd for SnapshotPreview {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.timestamp.partial_cmp(&other.timestamp)
+        Some(self.cmp(other))
     }
 }
 impl Eq for SnapshotPreview {}
